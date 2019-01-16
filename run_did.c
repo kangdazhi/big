@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
             break;
         case 11:
             data = (clockevent_device_t){"lapic", args[0], args[1]};
-            if (ioctl(fd, WRITE_CLOCKEVENT_DEVICES, data) < 0)
+            if (ioctl(fd, WRITE_CLOCKEVENT_DEVICES, &data) < 0)
                 perror("ioctl");
             break;
         default:
