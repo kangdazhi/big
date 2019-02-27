@@ -1,7 +1,5 @@
 /*
  * Direct interrupt delivery.
- * @author Kevin Cheng
- * @since  01/15/2019
  */
 #include <linux/init.h>
 #include <linux/module.h>
@@ -10,330 +8,317 @@
 #include <linux/err.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
-#include <asm/uaccess.h>
 #include <linux/string.h>
 #include <linux/delay.h>
-#include <asm/kvm_para.h>
 #include <linux/ktime.h>
 #include <linux/kallsyms.h>
 #include <linux/list.h>
 #include <linux/clockchips.h>
+#include <linux/cpumask.h>
+#include <asm/uaccess.h>
+#include <asm/kvm_para.h>
+#include <asm/irq_vectors.h>
 
 #include "did.h"
 
-/* Clockevent devices */
-typedef struct list_head list_head;
-static list_head *clockevent_devices;
-static struct clock_event_device *device;
-static struct clock_event_device *temp;
+static u32 ncpus;
+static struct clock_event_device *lapic_events;
+struct did {
+        unsigned long pid;      /* posted-intr descriptor page  vaddr */
+        unsigned long start;    /* posted-intr descriptor start vaddr */
 
-/* DTID */
-struct osnet_dtid_pi_desc {
-    unsigned long pid;      /* PID vaddr */
-    unsigned long start;    /* PID start addr */
-    ktime_t entry_time;     /* entry time to the APID timer interrupt handler */
+        /* Save the old LAPIC handler */
+        void (*event_handler)(struct clock_event_device *);
 };
-extern struct osnet_dtid_pi_desc *osnet_pids;
-static unsigned int ncpus = 0;
+static struct did *dids;
 
 static int my_open(struct inode *iobj, struct file *fobj)
 {
-    return 0;
+        return 0;
 }
 
 static int my_release(struct inode *iobj, struct file *fobj)
 {
-    return 0;
+        return 0;
 }
 
-/* Clockevent devices */
-void read_clockevent_devices(void)
+static void print_did(void)
 {
-    clockevent_devices =
-        (list_head *) kallsyms_lookup_name("clockevent_devices");
-    list_for_each_entry_safe(device, temp, clockevent_devices, list) {
-        pr_info("%s\t%d\t%d\n", device->name, device->mult, device->shift);
-    }
-}
+        u32 i;
 
-int write_clockevent_devices(unsigned long arg)
-{
-    clockevent_device_t data;
-    int is_bad = copy_from_user(&data, (clockevent_device_t *) arg,
-                                sizeof(clockevent_device_t));
-    if (is_bad) return -EACCES;
-    clockevent_devices =
-        (list_head *) kallsyms_lookup_name("clockevent_devices");
-    list_for_each_entry_safe(device, temp, clockevent_devices, list) {
-        if (strcmp(device->name, data.name) == 0) {
-            device->mult = data.mult;
-            device->shift = data.shift;
-            pr_info("%s\t%d\t%d\n", device->name, device->mult, device->shift);
-        }
-    }
-    return 0;
-}
-
-/* DTID */
-static bool allocate(void)
-{
-    int i;
-
-    if (ncpus == 0)
-        return false;
-
-    osnet_pids = kcalloc(ncpus, sizeof(*osnet_pids), GFP_ATOMIC);
-    if (osnet_pids) {
-        pr_info("pid array vaddr: 0x%p\n", osnet_pids);
-        pr_info("pid array paddr: 0x%llx\n", virt_to_phys(osnet_pids));
+        pr_info("pid array vaddr: 0x%p\n", dids);
+        pr_info("pid array paddr: 0x%llx\n", virt_to_phys(dids));
 
         for (i = 0; i < ncpus; i++) {
-            void *page = kmalloc(PAGE_SIZE, GFP_ATOMIC);
-            if (page) {
-                osnet_pids[i].pid = (unsigned long) page;
-                pr_info("pid page vaddr : 0x%lx\n", osnet_pids[i].pid);
-                pr_info("pid page paddr : 0x%llx\n",
-                        virt_to_phys((void *)osnet_pids[i].pid));
-            } else {
-                pr_alert("Fail to kmalloc a page\n");
-                return false;
-            }
+                unsigned long long paddr = virt_to_phys((void *)dids[i].pid);
+                pr_info("cpu            : %u", i);
+                pr_info("pid page vaddr : 0x%lx\n", dids[i].pid);
+                pr_info("pid page paddr : 0x%llx\n", paddr);
+                pr_info("start          : 0x%lx\n", dids[i].start);
+                pr_info("event_handler  : 0x%p\n", dids[i].event_handler);
         }
-    } else {
-        pr_alert("Fail to allocate pid array\n");
-        return false;
-    }
+}
 
-    return true;
+static bool allocate(void)
+{
+        u32 i;
+        bool ret = true;
+        dids = kcalloc(ncpus, sizeof(*dids), GFP_ATOMIC);
+
+        if (dids) {
+                for (i = 0; i < ncpus; i++) {
+                        void *page = kmalloc(PAGE_SIZE, GFP_ATOMIC);
+                        if (page) {
+                                dids[i].pid = (unsigned long)page;
+                        } else {
+                                pr_alert("Fail to kmalloc a page\n");
+                                ret = false;
+                        }
+                }
+        } else {
+                pr_alert("Fail to allocate pid array\n");
+                ret = false;
+        }
+
+        return ret;
+}
+
+static void touch_page(void)
+{
+        u32 i;
+
+        if (!dids) return;
+
+        for (i = 0; i < ncpus; i++) {
+                const char *data = (const char *)dids[i].pid;
+                if (data) {
+                        char temp;
+                        temp = data[0];
+                        temp = data[PAGE_SIZE - 1];
+                }
+        }
 }
 
 static void deallocate(void)
 {
-    int i;
+        u32 i;
 
-    if (osnet_pids) {
+        if (!dids) return;
+
         for (i = 0; i < ncpus; i++) {
-            void *pid = (void *)osnet_pids[i].pid;
-            if (pid) {
+                void *pid = (void *)dids[i].pid;
                 kfree(pid);
                 pr_info("pid page is freed : 0x%p\n", pid);
-            }
-            else {
-                pr_alert("pid page is NULL\n");
-            }
 
-            osnet_pids[i].pid = 0;
-            osnet_pids[i].start = 0;
-            osnet_pids[i].entry_time = 0;
+                dids[i].pid = 0;
+                dids[i].start = 0;
+                dids[i].event_handler = NULL;
         }
-        kfree(osnet_pids);
-        pr_info("pid array is freed: 0x%p\n", osnet_pids);
-        osnet_pids = NULL;
-    }
+
+        kfree(dids);
+        pr_info("pid array is freed: 0x%p\n", dids);
+        dids = NULL;
+}
+
+/*
+ * test_and_set_bit uses the LOCK prefix. It achieve the
+ * atomicity by locking the cache line to the shared memory.
+ * This ensures the processor has the exclusive ownership of
+ * shared memory for the duration of operation. However, it
+ * also prevents the VT-d chipset to modify the shared memory
+ * containing, PID. Since we are only setting the PIR
+ * timer-interrupt bit without touching other PIR bits and the
+ * guest is in the control of LAPIC timer chip, it is safe to
+ * use the non-atomic set operation for the PIR
+ * timer-interrupt bit.
+ */
+//#define PI_ON 0x100   /* ON bit is at 256 */
+static void pi_set_timer_interrupt(unsigned long *addr)
+{
+        __set_bit(LOCAL_TIMER_VECTOR, addr);
+        //__set_bit(PI_ON, addr);
+}
+
+/*
+ * Keep the PIR timer-interrupt and ON bit on all the time. We
+ * only process the timer interrupt, when it is not the early
+ * timer delivery.
+ */
+static bool bypass_early_timer_interrupt(int cpu, ktime_t next_event)
+{
+        ktime_t now;
+        bool ret = false;
+        bool mapped = dids && dids[cpu].start;
+
+        if (mapped) {
+                pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
+
+                now = ktime_get();
+                if (now < next_event) ret = true;
+        }
+
+        return ret;
+}
+
+static void timer_interrupt_handler(struct clock_event_device *dev)
+{
+        void (*event_handler)(struct clock_event_device *);
+        int cpu = smp_processor_id();
+        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+
+        if(bypass_early_timer_interrupt(cpu, evt->next_event)) return;
+
+        event_handler = dids[cpu].event_handler;
+        event_handler(evt);
+}
+
+/*
+ * lapic_events is a per_cpu variable storing the clockevent
+ * handler. The usespace program have to call the module on
+ * every online CPUs.
+ */
+static void set_percpu_event_handler(void)
+{
+        int cpu = smp_processor_id();
+        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+
+        dids[cpu].event_handler = evt->event_handler;
+        evt->event_handler = timer_interrupt_handler;
+}
+
+static void restore_percpu_event_handler(void)
+{
+        int cpu = smp_processor_id();
+        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+
+        evt->event_handler = dids[cpu].event_handler;
 }
 
 static bool map_posted_interrupt_descriptor(void)
 {
-    int offset;
-    unsigned int cpu;
-    unsigned long pid;
+        bool ret = true;
+        unsigned int cpu = smp_processor_id();
+        unsigned long pid = dids[cpu].pid;
+        int offset = kvm_hypercall1(KVM_HC_MAP_PID, virt_to_phys((void *)pid));
 
-    cpu = smp_processor_id();
-    pid = osnet_pids[cpu].pid;
+        if (offset >= 0) {
+                dids[cpu].start = (pid & ~0xFFF) | offset;
+                pr_info("cpu(%u): kvm_hypercall1 succeed: 0x%x\n", cpu, offset);
+        } else {
+                pr_alert("kvm_hypercall1 fails: %u\t%d\n", cpu, offset);
+                ret = false;
+        }
 
-    offset = (int) kvm_hypercall1(KVM_HC_MAP_PID, virt_to_phys((void *)pid));
-    if (offset < 0) {
-        pr_alert("kvm_hypercall1 fails: %u\t%d\n", cpu, offset);
-        return false;
-    }
-    else {
-        unsigned long start = (pid & ~0xFFF) | offset;
-        osnet_pids[cpu].start = start;
-
-        pr_info("cpu(%u): kvm_hypercall1 succeed: 0x%x\n", cpu, offset);
-        pr_info("cpu(%u): start: 0x%lx\n", cpu, osnet_pids[cpu].start);
-    }
-
-    return true;
+        return ret;
 }
 
 static bool unmap_posted_interrupt_descriptor(void)
 {
-    int ret;
-    unsigned int cpu;
-    unsigned long pid;
+        bool ret = true;
+        unsigned int cpu = smp_processor_id();
+        unsigned long pid = dids[cpu].pid;
+        int res = kvm_hypercall1(KVM_HC_UNMAP_PID, virt_to_phys((void *)pid));
 
-    cpu = smp_processor_id();
-    pid = osnet_pids[cpu].pid;
+        if (res) {
+                dids[cpu].start = 0;
+                pr_info("cpu(%u): kvm_hypercall1 succeed\n", cpu);
+        } else {
+                pr_alert("cpu(%u): kvm_hypercall1 fails: %d\n", cpu, res);
+                ret = false;
+        }
 
-    ret = (int) kvm_hypercall1(KVM_HC_UNMAP_PID, virt_to_phys((void *)pid));
-    if (ret) {
-        osnet_pids[cpu].start = 0;
-        pr_info("cpu(%u): kvm_hypercall1 succeed\n", cpu);
-    }
-    else {
-        pr_alert("cpu(%u): kvm_hypercall1 fails: %d\n", cpu, ret);
-        return false;
-    }
-
-    return true;
-}
-
-static void test_read_posted_interrupt_request(void)
-{
-    int k;
-    unsigned int cpu;
-
-    cpu = smp_processor_id();
-    for (k = 0; k < 600000; k++) {
-        int i;
-        char temp;
-        const char *data;
-
-        data = (const char *)osnet_pids[cpu].start;
-        for (i = 0; i < PAGE_SIZE; i++)
-            temp = data[i];
-        usleep_range(100, 120);
-    }
-}
-
-static void test_write_posted_interrupt_request(void)
-{
-    int k;
-    unsigned int cpu;
-
-    cpu = smp_processor_id();
-    for (k = 0; k < 600000; k++) {
-        int i;
-        char *data = (char *)osnet_pids[cpu].start;
-
-        /* PID is in 0 - 63 Bytes */
-        for (i = 64; i < PAGE_SIZE; i++)
-            data[i] = '\0';
-        usleep_range(100, 120);
-    }
-}
-
-static void read_posted_interrupt_request(void)
-{
-    int i;
-    unsigned int *data;
-    unsigned int cpu;
-
-    cpu = smp_processor_id();
-    data = (unsigned int*)osnet_pids[cpu].start;
-    for (i = 7; i >=0 ; i--)
-        pr_info("cpu(%u): %d\t0x%x\n", cpu, i, data[i]);
-}
-
-static void write_posted_interrupt_request(unsigned long vector)
-{
-    unsigned int cpu;
-
-    cpu = smp_processor_id();
-    if (test_and_set_bit(vector, (unsigned long *)osnet_pids[cpu].start))
-        pr_info("cpu(%u): 0x%lx is set\n", cpu, vector);
-    else
-        pr_info("cpu(%u): Set 0x%lx\n", cpu, vector);
+        return ret;
 }
 
 static bool page_walk(void)
 {
-    int ret;
-    unsigned int cpu;
-    unsigned long pid;
+        bool ret = true;
+        unsigned int cpu = smp_processor_id();
+        unsigned long pid = dids[cpu].pid;
+        int res = kvm_hypercall1(KVM_HC_PAGE_WALK, virt_to_phys((void *)pid));
 
-    cpu = smp_processor_id();
-    pid = osnet_pids[cpu].pid;
-    ret = (int) kvm_hypercall1(KVM_HC_PAGE_WALK, virt_to_phys((void *)pid));
-    if (!ret) {
-        pr_alert("cpu(%u): kvm_hypercall1 fails: %d\n", cpu, ret);
-        return false;
-    }
-    return true;
+        if (res) {
+                pr_info("cpu(%u): kvm_hypercall1 succeed\n", cpu);
+        } else {
+                pr_alert("cpu(%u): kvm_hypercall1 fails: %d\n", cpu, res);
+                ret = false;
+        }
+
+        return ret;
 }
 
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
 {
-    switch (cmd) {
-        case ALLOCATE:
-            ncpus = arg;
-            if (!allocate())
-                return -1;
-            break;
-        case DEALLOCATE:
-            deallocate();
-            break;
-        case HYPERCALL_MAP_PID:
-            if(!map_posted_interrupt_descriptor())
-                return -1;
-            break;
-        case HYPERCALL_UNMAP_PID:
-            if(!unmap_posted_interrupt_descriptor())
-                return -1;
-            break;
-        case READ_PIR:
-            read_posted_interrupt_request();
-            break;
-        case WRITE_PIR:
-            write_posted_interrupt_request(arg);
-            break;
-        case PAGE_WALK:
-            if(!page_walk())
-                return -1;
-            break;
-        case TEST_READ:
-            test_read_posted_interrupt_request();
-            break;
-        case TEST_WRITE:
-            test_write_posted_interrupt_request();
-            break;
-        case READ_CLOCKEVENT_DEVICES:
-            read_clockevent_devices();
-            break;
-        case WRITE_CLOCKEVENT_DEVICES:
-            write_clockevent_devices(arg);
-            break;
-        default:
-            pr_alert("No such an ioctl option.\n");
-            return -EINVAL;
-    }
+        long ret = 0;
 
-    return 0;
+        switch (cmd) {
+        case SET_EVENT_HANDLER:
+                set_percpu_event_handler();
+                break;
+        case RESTORE_EVENT_HANDLER:
+                restore_percpu_event_handler();
+                break;
+        case PRINT_DID:
+                print_did();
+                break;
+        case HYPERCALL_MAP_PID:
+                if(!map_posted_interrupt_descriptor()) ret = -1;
+                break;
+        case HYPERCALL_UNMAP_PID:
+                if(!unmap_posted_interrupt_descriptor()) ret = -1;
+                break;
+        case HYPERCALL_PAGE_WALK:
+                if(!page_walk()) ret = -1;
+                break;
+        default:
+                pr_alert("No such an ioctl option.\n");
+                return -EINVAL;
+        }
+
+        return ret;
 }
 
 static struct file_operations misc_device_operations = {
-    .owner = THIS_MODULE,
-    .open = my_open,
-    .release = my_release,
-    .unlocked_ioctl = my_ioctl
+        .owner = THIS_MODULE,
+        .open = my_open,
+        .release = my_release,
+        .unlocked_ioctl = my_ioctl
 };
 
 static struct miscdevice misc_device = {
-    .minor = MISC_DYNAMIC_MINOR,
-    .name = DEVICE_NAME,
-    .fops = &misc_device_operations
+        .minor = MISC_DYNAMIC_MINOR,
+        .name = DEVICE_NAME,
+        .fops = &misc_device_operations
 };
 
 static int __init my_init(void)
 {
-    int is_error = misc_register(&misc_device);
-    if (is_error < 0) {
-        pr_alert("Fail to register %s\n", DEVICE);
-        return is_error;
-    }
-    else {
-        pr_info("Register %s\n", DEVICE);
-    }
+        int ret = misc_register(&misc_device);
 
-    return 0;
+        if (ret >= 0) {
+                unsigned long per_cpu_clock_event =
+                        kallsyms_lookup_name("lapic_events");
+
+                lapic_events = (struct clock_event_device *) per_cpu_clock_event;
+                ncpus = num_online_cpus();
+
+                allocate();
+                touch_page();
+
+                pr_info("Register %s\n", DEVICE);
+
+        } else {
+                pr_alert("Fail to register %s\n", DEVICE);
+        }
+
+        return ret;
 }
 
 static void __exit my_exit(void)
 {
-    deallocate();
-    misc_deregister(&misc_device);
-    pr_info("Bye %s\n", DEVICE);
+        deallocate();
+        misc_deregister(&misc_device);
+        pr_info("Bye %s\n", DEVICE);
 }
 
 module_init(my_init);
