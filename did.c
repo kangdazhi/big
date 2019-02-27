@@ -166,7 +166,7 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
         int cpu = smp_processor_id();
         struct clock_event_device *evt = this_cpu_ptr(lapic_events);
 
-        if(bypass_early_timer_interrupt(cpu, evt->next_event)) return;
+        if (bypass_early_timer_interrupt(cpu, evt->next_event)) return;
 
         event_handler = dids[cpu].event_handler;
         event_handler(evt);
@@ -272,7 +272,7 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 break;
         default:
                 pr_alert("No such an ioctl option.\n");
-                return -EINVAL;
+                ret = -EINVAL;
         }
 
         return ret;
@@ -298,7 +298,6 @@ static int __init my_init(void)
         if (ret >= 0) {
                 unsigned long per_cpu_clock_event =
                         kallsyms_lookup_name("lapic_events");
-
                 lapic_events = (struct clock_event_device *) per_cpu_clock_event;
                 ncpus = num_online_cpus();
 
