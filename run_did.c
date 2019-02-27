@@ -63,11 +63,11 @@ int main(int argc, char *argv[])
         } else if (strcmp(op, "print_did") == 0) {
                 if (ioctl(fd, PRINT_DID) < 0) goto error;
         } else if (strcmp(op, "map_pid") == 0) {
-                if (ioctl(fd, HYPERCALL_MAP_PID) < 0) goto error;
+                if (ioctl(fd, MAP_PID) < 0) goto error;
         } else if (strcmp(op, "unmap_pid") == 0) {
-                if (ioctl(fd, HYPERCALL_UNMAP_PID) < 0) goto error;
+                if (ioctl(fd, UNMAP_PID) < 0) goto error;
         } else if (strcmp(op, "page_walk") == 0) {
-                if (ioctl(fd, HYPERCALL_PAGE_WALK) < 0) goto error;
+                if (ioctl(fd, PAGE_WALK) < 0) goto error;
         } else {
                 fprintf(stderr, "No such option: %s\n", op);
         }
@@ -81,10 +81,10 @@ int main(int argc, char *argv[])
         case 2:
                 break;
         case 3:
-                if (ioctl(fd, HYPERCALL_MAP_PID) < 0) goto error;
+                if (ioctl(fd, MAP_PID) < 0) goto error;
                 break;
         case 4:
-                if (ioctl(fd, HYPERCALL_UNMAP_PID) < 0) goto error;
+                if (ioctl(fd, UNMAP_PID) < 0) goto error;
                 break;
         case 5:
                 if (ioctl(fd, READ_PIR) < 0) goto error;

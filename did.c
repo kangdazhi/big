@@ -261,13 +261,13 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case PRINT_DID:
                 print_did();
                 break;
-        case HYPERCALL_MAP_PID:
+        case MAP_PID:
                 if(!map_posted_interrupt_descriptor()) ret = -1;
                 break;
-        case HYPERCALL_UNMAP_PID:
+        case UNMAP_PID:
                 if(!unmap_posted_interrupt_descriptor()) ret = -1;
                 break;
-        case HYPERCALL_PAGE_WALK:
+        case PAGE_WALK:
                 if(!page_walk()) ret = -1;
                 break;
         default:

@@ -14,13 +14,17 @@ typedef struct clockevent_device_t {
         unsigned int shift;
 } clockevent_device_t;
 
-/* DID */
-#define KVM_HC_MAP_PID   9
-#define KVM_HC_UNMAP_PID 10
-#define KVM_HC_PAGE_WALK 11
-#define HYPERCALL_MAP_PID   _IO('k', 9999)
-#define HYPERCALL_UNMAP_PID _IO('k', 1000)
-#define HYPERCALL_PAGE_WALK _IO('k', 1111)
+/* hypercalls */
+#define KVM_HC_SETUP_DID        100
+#define KVM_HC_RESTORE_DID      101
+#define KVM_HC_MAP_PID          200
+#define KVM_HC_UNMAP_PID        201
+#define KVM_HC_PAGE_WALK        202
+
+/* ioctls */
+#define MAP_PID               _IO('k', 9999)
+#define UNMAP_PID             _IO('k', 1000)
+#define PAGE_WALK             _IO('k', 1111)
 
 #define SET_EVENT_HANDLER     _IO('k', 3)
 #define RESTORE_EVENT_HANDLER _IO('k', 9)
