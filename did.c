@@ -310,7 +310,7 @@ static int setup_percpu_did(unsigned long user_arg)
                 set_percpu_event_handler();
 
                 pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
-                apic_write(APIC_TMICT, 0x616d)
+                apic_write(APIC_TMICT, 0x616d);
         } else {
                 pr_alert("setting up did fails: %u\t%d\n", cpu, offset);
                 ret = -EPERM;
@@ -339,7 +339,7 @@ static bool restore_percpu_did(void)
         }
 
         restore_percpu_clockevent_factor();
-        apic_write(APIC_TMICT, 0x616d)
+        apic_write(APIC_TMICT, 0x616d);
 
         return ret;
 }
