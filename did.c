@@ -18,16 +18,21 @@
 #include <asm/uaccess.h>
 #include <asm/kvm_para.h>
 #include <asm/irq_vectors.h>
+#include <asm/apic.h>
 
 #include "did.h"
 
 static u32 ncpus;
 static struct clock_event_device *lapic_events;
 struct did {
-        unsigned long pid;      /* posted-intr descriptor page  vaddr */
-        unsigned long start;    /* posted-intr descriptor start vaddr */
+        /* posted-intr descriptor */
+        unsigned long pid;      /* pid page  vaddr */
+        unsigned long start;    /* pid start vaddr */
 
-        /* Save the old LAPIC handler */
+        /* clockevent device */
+        u32 mult;               /* old clock multiplication factor */
+        u32 shift;              /* old clock shift factor */
+                                /* old LAPIC handler */
         void (*event_handler)(struct clock_event_device *);
 };
 static struct did *dids;
@@ -46,15 +51,20 @@ static void print_did(void)
 {
         u32 i;
 
+        pr_info("-------------------------");
         pr_info("pid array vaddr: 0x%p\n", dids);
         pr_info("pid array paddr: 0x%llx\n", virt_to_phys(dids));
 
         for (i = 0; i < ncpus; i++) {
                 unsigned long long paddr = virt_to_phys((void *)dids[i].pid);
+
+                pr_info("*************************");
                 pr_info("cpu            : %u", i);
                 pr_info("pid page vaddr : 0x%lx\n", dids[i].pid);
                 pr_info("pid page paddr : 0x%llx\n", paddr);
                 pr_info("start          : 0x%lx\n", dids[i].start);
+                pr_info("mult           : %u\n", dids[i].mult);
+                pr_info("shift          : %u\n", dids[i].shift);
                 pr_info("event_handler  : 0x%p\n", dids[i].event_handler);
         }
 }
@@ -87,7 +97,8 @@ static void touch_page(void)
 {
         u32 i;
 
-        if (!dids) return;
+        if (!dids)
+                return;
 
         for (i = 0; i < ncpus; i++) {
                 const char *data = (const char *)dids[i].pid;
@@ -103,7 +114,8 @@ static void deallocate(void)
 {
         u32 i;
 
-        if (!dids) return;
+        if (!dids)
+                return;
 
         for (i = 0; i < ncpus; i++) {
                 void *pid = (void *)dids[i].pid;
@@ -112,6 +124,8 @@ static void deallocate(void)
 
                 dids[i].pid = 0;
                 dids[i].start = 0;
+                dids[i].mult = 0;
+                dids[i].shift = 0;
                 dids[i].event_handler = NULL;
         }
 
@@ -154,7 +168,8 @@ static bool bypass_early_timer_interrupt(int cpu, ktime_t next_event)
                 pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
 
                 now = ktime_get();
-                if (now < next_event) ret = true;
+                if (now < next_event)
+                        ret = true;
         }
 
         return ret;
@@ -166,7 +181,8 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
         int cpu = smp_processor_id();
         struct clock_event_device *evt = this_cpu_ptr(lapic_events);
 
-        if (bypass_early_timer_interrupt(cpu, evt->next_event)) return;
+        if (bypass_early_timer_interrupt(cpu, evt->next_event))
+                return;
 
         event_handler = dids[cpu].event_handler;
         event_handler(evt);
@@ -194,7 +210,7 @@ static void restore_percpu_event_handler(void)
         evt->event_handler = dids[cpu].event_handler;
 }
 
-static bool map_posted_interrupt_descriptor(void)
+static bool map_percpu_posted_interrupt_descriptor(void)
 {
         bool ret = true;
         unsigned int cpu = smp_processor_id();
@@ -203,16 +219,16 @@ static bool map_posted_interrupt_descriptor(void)
 
         if (offset >= 0) {
                 dids[cpu].start = (pid & ~0xFFF) | offset;
-                pr_info("cpu(%u): kvm_hypercall1 succeed: 0x%x\n", cpu, offset);
+                pr_info("cpu(%u): mapping pid succeed: 0x%x\n", cpu, offset);
         } else {
-                pr_alert("kvm_hypercall1 fails: %u\t%d\n", cpu, offset);
+                pr_alert("maping pid fails: %u\t%d\n", cpu, offset);
                 ret = false;
         }
 
         return ret;
 }
 
-static bool unmap_posted_interrupt_descriptor(void)
+static bool unmap_percpu_posted_interrupt_descriptor(void)
 {
         bool ret = true;
         unsigned int cpu = smp_processor_id();
@@ -221,16 +237,16 @@ static bool unmap_posted_interrupt_descriptor(void)
 
         if (res) {
                 dids[cpu].start = 0;
-                pr_info("cpu(%u): kvm_hypercall1 succeed\n", cpu);
+                pr_info("cpu(%u): unmapping pid succeed\n", cpu);
         } else {
-                pr_alert("cpu(%u): kvm_hypercall1 fails: %d\n", cpu, res);
+                pr_alert("cpu(%u): unmapping pid fails: %d\n", cpu, res);
                 ret = false;
         }
 
         return ret;
 }
 
-static bool page_walk(void)
+static bool percpu_page_walk(void)
 {
         bool ret = true;
         unsigned int cpu = smp_processor_id();
@@ -238,11 +254,92 @@ static bool page_walk(void)
         int res = kvm_hypercall1(KVM_HC_PAGE_WALK, virt_to_phys((void *)pid));
 
         if (res) {
-                pr_info("cpu(%u): kvm_hypercall1 succeed\n", cpu);
+                pr_info("cpu(%u): page-walk succeed\n", cpu);
         } else {
-                pr_alert("cpu(%u): kvm_hypercall1 fails: %d\n", cpu, res);
+                pr_alert("cpu(%u): page-walk fails: %d\n", cpu, res);
                 ret = false;
         }
+
+        return ret;
+}
+
+static int set_percpu_clockevent_factor(unsigned long arg)
+{
+        int ret = 0;
+        clockevent_device_t data;
+        int cpu = smp_processor_id();
+        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+        int is_bad = copy_from_user(&data, (clockevent_device_t *)arg,
+                                    sizeof(clockevent_device_t));
+        if (is_bad)
+                ret = -EACCES;
+
+        dids[cpu].mult = evt->mult;
+        dids[cpu].shift = evt->shift;
+
+        evt->mult = data.mult;
+        evt->shift = data.shift;
+
+        return ret;
+}
+
+static void restore_percpu_clockevent_factor(void)
+{
+        int cpu = smp_processor_id();
+        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+
+        evt->mult = dids[cpu].mult;
+        evt->shift = dids[cpu].shift;
+}
+
+static int setup_percpu_did(unsigned long user_arg)
+{
+        int ret = 0;
+        unsigned int cpu = smp_processor_id();
+        unsigned long pid = dids[cpu].pid;
+        int offset;
+
+        ret = set_percpu_clockevent_factor(user_arg);
+
+        offset = kvm_hypercall1(KVM_HC_SETUP_DID, virt_to_phys((void *)pid));
+
+        if (offset >= 0) {
+                dids[cpu].start = (pid & ~0xFFF) | offset;
+                pr_info("cpu(%u): setting up did succeed: 0x%x\n", cpu, offset);
+
+                set_percpu_event_handler();
+
+                pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
+                apic_write(APIC_TMICT, 0x616d)
+        } else {
+                pr_alert("setting up did fails: %u\t%d\n", cpu, offset);
+                ret = -EPERM;
+        }
+
+        return ret;
+}
+
+static bool restore_percpu_did(void)
+{
+        bool ret = true;
+        unsigned int cpu = smp_processor_id();
+        unsigned long pid = dids[cpu].pid;
+        int res;
+
+        restore_percpu_event_handler();
+
+        res = kvm_hypercall1(KVM_HC_RESTORE_DID, virt_to_phys((void *)pid));
+
+        if (res) {
+                dids[cpu].start = 0;
+                pr_info("cpu(%u): restoring did succeed\n", cpu);
+        } else {
+                pr_alert("cpu(%u): restoring did fails: %d\n", cpu, res);
+                ret = false;
+        }
+
+        restore_percpu_clockevent_factor();
+        apic_write(APIC_TMICT, 0x616d)
 
         return ret;
 }
@@ -262,13 +359,29 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 print_did();
                 break;
         case MAP_PID:
-                if(!map_posted_interrupt_descriptor()) ret = -1;
+                if (!map_percpu_posted_interrupt_descriptor())
+                        ret = -EPERM;
                 break;
         case UNMAP_PID:
-                if(!unmap_posted_interrupt_descriptor()) ret = -1;
+                if (!unmap_percpu_posted_interrupt_descriptor())
+                        ret = -EPERM;
                 break;
         case PAGE_WALK:
-                if(!page_walk()) ret = -1;
+                if (!percpu_page_walk())
+                        ret = -EPERM;
+                break;
+        case SET_CLOCKEVENT_FACTOR:
+                ret = set_percpu_clockevent_factor(arg);
+                break;
+        case RESTORE_CLOCKEVENT_FACTOR:
+                restore_percpu_clockevent_factor();
+                break;
+        case SETUP_DID:
+                ret = setup_percpu_did(arg);
+                break;
+        case RESTORE_DID:
+                if (!restore_percpu_did())
+                        ret = -EPERM;
                 break;
         default:
                 pr_alert("No such an ioctl option.\n");
