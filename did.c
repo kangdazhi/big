@@ -37,6 +37,17 @@ struct did {
 };
 static struct did *dids;
 
+struct ipi {
+        void (*send_IPI)(int cpu, int vector);
+        void (*send_IPI_mask)(const struct cpumask *mask, int vector);
+        void (*send_IPI_mask_allbutself)(const struct cpumask *mask,
+                                         int vector);
+        void (*send_IPI_allbutself)(int vector);
+        void (*send_IPI_all)(int vector);
+        void (*send_IPI_self)(int vector);
+};
+static struct ipi *ipi;
+
 static int my_open(struct inode *iobj, struct file *fobj)
 {
         return 0;
@@ -90,48 +101,55 @@ static bool allocate(void)
                 ret = false;
         }
 
+        ipi = kzalloc(sizeof(*ipi), GFP_ATOMIC);
+        if (!ipi) {
+                pr_alert("Fail to allocat ipi struct\n");
+                ret = false;
+        }
+
         return ret;
 }
 
 static void touch_page(void)
 {
-        u32 i;
-
-        if (!dids)
-                return;
-
-        for (i = 0; i < ncpus; i++) {
-                const char *data = (const char *)dids[i].pid;
-                if (data) {
-                        char temp;
-                        temp = data[0];
-                        temp = data[PAGE_SIZE - 1];
+        if (dids) {
+                u32 i;
+                for (i = 0; i < ncpus; i++) {
+                        const char *data = (const char *)dids[i].pid;
+                        if (data) {
+                                char temp;
+                                temp = data[0];
+                                temp = data[PAGE_SIZE - 1];
+                        }
                 }
         }
 }
 
 static void deallocate(void)
 {
-        u32 i;
+        if (dids) {
+                u32 i;
+                for (i = 0; i < ncpus; i++) {
+                        void *pid = (void *)dids[i].pid;
+                        kfree(pid);
+                        pr_info("pid page is freed : 0x%p\n", pid);
 
-        if (!dids)
-                return;
+                        dids[i].pid = 0;
+                        dids[i].start = 0;
+                        dids[i].mult = 0;
+                        dids[i].shift = 0;
+                        dids[i].event_handler = NULL;
+                }
 
-        for (i = 0; i < ncpus; i++) {
-                void *pid = (void *)dids[i].pid;
-                kfree(pid);
-                pr_info("pid page is freed : 0x%p\n", pid);
-
-                dids[i].pid = 0;
-                dids[i].start = 0;
-                dids[i].mult = 0;
-                dids[i].shift = 0;
-                dids[i].event_handler = NULL;
+                kfree(dids);
+                dids = NULL;
+                pr_info("pid array is freed: 0x%p\n", dids);
         }
 
-        kfree(dids);
-        pr_info("pid array is freed: 0x%p\n", dids);
-        dids = NULL;
+        if (ipi) {
+                kfree(ipi);
+                ipi = NULL;
+        }
 }
 
 /*
@@ -147,10 +165,15 @@ static void deallocate(void)
  * timer-interrupt bit.
  */
 //#define PI_ON 0x100   /* ON bit is at 256 */
-static void pi_set_timer_interrupt(unsigned long *addr)
+static void pi_set_timer_interrupt(unsigned long *pid)
 {
-        __set_bit(LOCAL_TIMER_VECTOR, addr);
-        //__set_bit(PI_ON, addr);
+        __set_bit(LOCAL_TIMER_VECTOR, pid);
+        //__set_bit(PI_ON, pid);
+}
+
+static void set_posted_interrupt(u32 vector, unsigned long *pid)
+{
+        __set_bit(vector, pid);
 }
 
 /*
@@ -344,6 +367,129 @@ static bool restore_percpu_did(void)
         return ret;
 }
 
+/* IPI */
+static void did_send_IPI(int cpu, int vector)
+{
+        set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
+        ipi->send_IPI(cpu, POSTED_INTR_VECTOR);
+}
+
+static void did_send_IPI_mask(const struct cpumask *mask, int vector)
+{
+        unsigned long cpu;
+
+        for_each_cpu(cpu, mask)
+                set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
+
+        ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
+}
+
+static void did_send_IPI_mask_allbutself(const struct cpumask *mask, int vector)
+{
+        unsigned long this_cpu = smp_processor_id();
+        unsigned long query_cpu;
+
+        for_each_cpu(query_cpu, mask) {
+                if (query_cpu == this_cpu)
+                        continue;
+                set_posted_interrupt(vector,
+                                     (unsigned long *)dids[query_cpu].start);
+        }
+
+        ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
+}
+
+static void did_send_IPI_allbutself(int vector)
+{
+        did_send_IPI_mask_allbutself(cpu_online_mask, vector);
+}
+
+static void did_send_IPI_all(int vector)
+{
+        did_send_IPI_mask(cpu_online_mask, vector);
+}
+
+static void did_send_IPI_self(int vector)
+{
+        unsigned long cpu = smp_processor_id();
+
+        set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
+        ipi->send_IPI_self(POSTED_INTR_VECTOR);
+}
+
+static void set_apic_ipi(void)
+{
+        ipi->send_IPI = apic->send_IPI;
+        ipi->send_IPI_mask = apic->send_IPI_mask;
+        ipi->send_IPI_mask_allbutself = apic->send_IPI_mask_allbutself;
+        ipi->send_IPI_allbutself = apic->send_IPI_allbutself;
+        ipi->send_IPI_all = apic->send_IPI_all;
+        ipi->send_IPI_self = apic->send_IPI_self;
+
+        /* TODO: apic is in the READ-ONLY section */
+        apic->send_IPI = did_send_IPI;
+        apic->send_IPI_mask = did_send_IPI_mask;
+        apic->send_IPI_mask_allbutself = did_send_IPI_mask_allbutself;
+        apic->send_IPI_allbutself = did_send_IPI_allbutself;
+        apic->send_IPI_all = did_send_IPI_all;
+        apic->send_IPI_self = did_send_IPI_self;
+}
+
+static void restore_apic_ipi(void)
+{
+        apic->send_IPI = ipi->send_IPI;
+        apic->send_IPI_mask = ipi->send_IPI_mask;
+        apic->send_IPI_mask_allbutself = ipi->send_IPI_mask_allbutself;
+        apic->send_IPI_allbutself = ipi->send_IPI_allbutself;
+        apic->send_IPI_all = ipi->send_IPI_all;
+        apic->send_IPI_self = ipi->send_IPI_self;
+}
+
+static void get_x2apic_id(void)
+{
+        int cpu = smp_processor_id();
+        int apicid;
+
+        apicid = per_cpu(x86_cpu_to_apicid, cpu);
+        pr_info("phys x2apic id: 0x%x\n", apicid);
+}
+
+static void set_x2apic_id(void)
+{
+        int cpu = smp_processor_id();
+        int apicid;
+
+        rdmsrl(APIC_BASE_MSR + (APIC_ID >> 4), apicid);
+        per_cpu(x86_cpu_to_apicid, cpu) = apicid;
+        pr_info("0x%x\n", per_cpu(x86_cpu_to_apicid, cpu));
+}
+
+static void set_x2apic_id2(unsigned long apicid)
+{
+        int cpu = smp_processor_id();
+
+        per_cpu(x86_cpu_to_apicid, cpu) = apicid;
+        pr_info("0x%x\n", per_cpu(x86_cpu_to_apicid, cpu));
+}
+
+static void hypercall_set_x2apic_id(void)
+{
+        kvm_hypercall0(KVM_HC_SET_X2APIC_ID);
+        pr_info("hypercall to set up x2apic id\n");
+}
+
+static void hypercall_disable_intercept_wrmsr_icr(void)
+{
+        kvm_hypercall0(KVM_HC_DISABLE_INTERCEPT_WRMSR_ICR);
+        pr_info("hypercall to disable intercept wrmsr icr\n");
+}
+
+static void hypercall_enable_intercept_wrmsr_icr(void)
+{
+        kvm_hypercall0(KVM_HC_ENABLE_INTERCEPT_WRMSR_ICR);
+        pr_info("hypercall to enable intercept wrmsr icr\n");
+}
+
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
 {
         long ret = 0;
@@ -383,6 +529,30 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 if (!restore_percpu_did())
                         ret = -EPERM;
                 break;
+        case SET_APIC_IPI:
+                set_apic_ipi();
+                break;
+        case RESTORE_APIC_IPI:
+                restore_apic_ipi();
+                break;
+        case GET_X2APIC_ID:
+                get_x2apic_id();
+                break;
+        case SET_X2APIC_ID:
+                set_x2apic_id();
+                break;
+        case SET_X2APIC_ID2:
+                set_x2apic_id2(arg);
+                break;
+        case HYPERCALL_SET_X2APIC_ID:
+                hypercall_set_x2apic_id();
+                break;
+        case HYPERCALL_DISABLE_INTERCEPT_WRMSR_ICR:
+                hypercall_disable_intercept_wrmsr_icr();
+                break;
+        case HYPERCALL_ENABLE_INTERCEPT_WRMSR_ICR:
+                hypercall_enable_intercept_wrmsr_icr();
+                break;
         default:
                 pr_alert("No such an ioctl option.\n");
                 ret = -EINVAL;
@@ -411,7 +581,7 @@ static int __init my_init(void)
         if (ret >= 0) {
                 unsigned long per_cpu_clock_event =
                         kallsyms_lookup_name("lapic_events");
-                lapic_events = (struct clock_event_device *) per_cpu_clock_event;
+                lapic_events = (struct clock_event_device *)per_cpu_clock_event;
                 ncpus = num_online_cpus();
 
                 allocate();
