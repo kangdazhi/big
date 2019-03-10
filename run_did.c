@@ -31,6 +31,9 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- restore_did\n");
                 fprintf(stderr, "- set_apic_ipi\n");
                 fprintf(stderr, "- restore_apic_ipi\n");
+                fprintf(stderr, "- disable_intercept_wrmsr_icr\n");
+                fprintf(stderr, "- enable_intercept_wrmsr_icr\n");
+                fprintf(stderr, "- page_talk_init_mm\n");
                 return -1;
         }
         char *op = argv[1];
@@ -58,13 +61,13 @@ int main(int argc, char *argv[])
                 if (ioctl(fd, PRINT_DID) < 0)
                         goto error;
         } else if (strcmp(op, "map_pid") == 0) {
-                if (ioctl(fd, MAP_PID) < 0)
+                if (ioctl(fd, HC_MAP_PID) < 0)
                         goto error;
         } else if (strcmp(op, "unmap_pid") == 0) {
-                if (ioctl(fd, UNMAP_PID) < 0)
+                if (ioctl(fd, HC_UNMAP_PID) < 0)
                         goto error;
         } else if (strcmp(op, "page_walk") == 0) {
-                if (ioctl(fd, PAGE_WALK) < 0)
+                if (ioctl(fd, HC_PAGE_WALK) < 0)
                         goto error;
         } else if (strcmp(op, "set_clockevent_factor") == 0) {
                 clockevent_device_t data =
@@ -79,10 +82,10 @@ int main(int argc, char *argv[])
                 clockevent_device_t data =
                         (clockevent_device_t){"lapic", args[0], args[1]};
 
-                if (ioctl(fd, SETUP_DID, &data) < 0)
+                if (ioctl(fd, HC_SETUP_DID, &data) < 0)
                         goto error;
         } else if (strcmp(op, "restore_did") == 0) {
-                if (ioctl(fd, RESTORE_DID) < 0)
+                if (ioctl(fd, HC_RESTORE_DID) < 0)
                         goto error;
         } else if (strcmp(op, "set_apic_ipi") == 0) {
                 if (ioctl(fd, SET_APIC_IPI) < 0)
@@ -109,6 +112,9 @@ int main(int argc, char *argv[])
                         goto error;
         } else if (strcmp(op, "hc_enable_intercept_wrmsr_icr") == 0) {
                 if (ioctl(fd, HYPERCALL_ENABLE_INTERCEPT_WRMSR_ICR) < 0)
+                        goto error;
+        } else if (strcmp(op, "page_walk_init_mm") == 0) {
+                if (ioctl(fd, PAGE_WALK_INIT_MM) < 0)
                         goto error;
         } else {
                 fprintf(stderr, "No such option: %s\n", op);

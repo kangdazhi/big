@@ -22,15 +22,15 @@ typedef struct clockevent_device_t {
 #define KVM_HC_PAGE_WALK        202
 #define KVM_HC_SET_X2APIC_ID                    300
 #define KVM_HC_RESTORE_X2APIC_ID                301
-#define KVM_HC_DISABLE_INTERCEPT_WRMSR_ICR      303
-#define KVM_HC_ENABLE_INTERCEPT_WRMSR_ICR       304
+#define KVM_HC_DISABLE_INTERCEPT_WRMSR_ICR      302
+#define KVM_HC_ENABLE_INTERCEPT_WRMSR_ICR       303
 
 /* ioctl to hypercall */
-#define MAP_PID         _IO('k', 1000)
-#define UNMAP_PID       _IO('k', 1001)
-#define PAGE_WALK       _IO('k', 1002)
-#define SETUP_DID       _IOW('k', 1003, clockevent_device_t *)
-#define RESTORE_DID     _IO('k', 1004)
+#define HC_MAP_PID         _IO('k', 1000)
+#define HC_UNMAP_PID       _IO('k', 1001)
+#define HC_PAGE_WALK       _IO('k', 1002)
+#define HC_SETUP_DID       _IOW('k', 1003, clockevent_device_t *)
+#define HC_RESTORE_DID     _IO('k', 1004)
 
 /* ioctl */
 #define SET_EVENT_HANDLER               _IO('k', 2000)
@@ -48,5 +48,8 @@ typedef struct clockevent_device_t {
 #define HYPERCALL_DISABLE_INTERCEPT_WRMSR_ICR   _IO('k', 3005)
 #define HYPERCALL_ENABLE_INTERCEPT_WRMSR_ICR    _IO('k', 3006)
 #define SET_X2APIC_ID2                          _IO('k', 3007)
+
+/* page table */
+#define PAGE_WALK_INIT_MM       _IO('k', 4000)
 
 #endif

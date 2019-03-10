@@ -19,6 +19,8 @@
 #include <asm/kvm_para.h>
 #include <asm/irq_vectors.h>
 #include <asm/apic.h>
+#include <asm/pgtable.h>
+#include <asm/pgalloc.h>
 
 #include "did.h"
 
@@ -216,7 +218,7 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
  * handler. The usespace program have to call the module on
  * every online CPUs.
  */
-static void set_percpu_event_handler(void)
+static void set_event_handler(void)
 {
         int cpu = smp_processor_id();
         struct clock_event_device *evt = this_cpu_ptr(lapic_events);
@@ -225,7 +227,7 @@ static void set_percpu_event_handler(void)
         evt->event_handler = timer_interrupt_handler;
 }
 
-static void restore_percpu_event_handler(void)
+static void restore_event_handler(void)
 {
         int cpu = smp_processor_id();
         struct clock_event_device *evt = this_cpu_ptr(lapic_events);
@@ -233,7 +235,7 @@ static void restore_percpu_event_handler(void)
         evt->event_handler = dids[cpu].event_handler;
 }
 
-static bool map_percpu_posted_interrupt_descriptor(void)
+static bool hc_map_posted_interrupt_descriptor(void)
 {
         bool ret = true;
         unsigned int cpu = smp_processor_id();
@@ -251,7 +253,7 @@ static bool map_percpu_posted_interrupt_descriptor(void)
         return ret;
 }
 
-static bool unmap_percpu_posted_interrupt_descriptor(void)
+static bool hc_unmap_posted_interrupt_descriptor(void)
 {
         bool ret = true;
         unsigned int cpu = smp_processor_id();
@@ -269,7 +271,7 @@ static bool unmap_percpu_posted_interrupt_descriptor(void)
         return ret;
 }
 
-static bool percpu_page_walk(void)
+static bool hc_page_walk(void)
 {
         bool ret = true;
         unsigned int cpu = smp_processor_id();
@@ -286,7 +288,7 @@ static bool percpu_page_walk(void)
         return ret;
 }
 
-static int set_percpu_clockevent_factor(unsigned long arg)
+static int set_clockevent_factor(unsigned long arg)
 {
         int ret = 0;
         clockevent_device_t data;
@@ -306,7 +308,7 @@ static int set_percpu_clockevent_factor(unsigned long arg)
         return ret;
 }
 
-static void restore_percpu_clockevent_factor(void)
+static void restore_clockevent_factor(void)
 {
         int cpu = smp_processor_id();
         struct clock_event_device *evt = this_cpu_ptr(lapic_events);
@@ -315,14 +317,14 @@ static void restore_percpu_clockevent_factor(void)
         evt->shift = dids[cpu].shift;
 }
 
-static int setup_percpu_did(unsigned long user_arg)
+static int hc_setup_did(unsigned long user_arg)
 {
         int ret = 0;
         unsigned int cpu = smp_processor_id();
         unsigned long pid = dids[cpu].pid;
         int offset;
 
-        ret = set_percpu_clockevent_factor(user_arg);
+        ret = set_clockevent_factor(user_arg);
 
         offset = kvm_hypercall1(KVM_HC_SETUP_DID, virt_to_phys((void *)pid));
 
@@ -330,7 +332,7 @@ static int setup_percpu_did(unsigned long user_arg)
                 dids[cpu].start = (pid & ~0xFFF) | offset;
                 pr_info("cpu(%u): setting up did succeed: 0x%x\n", cpu, offset);
 
-                set_percpu_event_handler();
+                set_event_handler();
 
                 pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
                 apic_write(APIC_TMICT, 0x616d);
@@ -342,14 +344,14 @@ static int setup_percpu_did(unsigned long user_arg)
         return ret;
 }
 
-static bool restore_percpu_did(void)
+static bool hc_restore_did(void)
 {
         bool ret = true;
         unsigned int cpu = smp_processor_id();
         unsigned long pid = dids[cpu].pid;
         int res;
 
-        restore_percpu_event_handler();
+        restore_event_handler();
 
         res = kvm_hypercall1(KVM_HC_RESTORE_DID, virt_to_phys((void *)pid));
 
@@ -361,7 +363,7 @@ static bool restore_percpu_did(void)
                 ret = false;
         }
 
-        restore_percpu_clockevent_factor();
+        restore_clockevent_factor();
         apic_write(APIC_TMICT, 0x616d);
 
         return ret;
@@ -505,44 +507,88 @@ static void hypercall_enable_intercept_wrmsr_icr(void)
         pr_info("hypercall to enable intercept wrmsr icr\n");
 }
 
+/* page table */
+static pte_t *page_walk(struct mm_struct *mm, unsigned long addr)
+{
+        pgd_t *pgd;
+        pud_t *pud;
+        pmd_t *pmd;
+        pte_t *pte;
+
+        pgd = pgd_offset(mm, addr);
+        if (pgd_none(*pgd))
+                goto out;
+        pr_info("PGD: 0x%p\t0x%lx\n", pgd, pgd_val(*pgd));
+
+        pud = pud_offset(pgd, addr);
+        if (pud_none(*pud))
+                goto out;
+        pr_info("PUD: 0x%p\t0x%lx\n", pud, pud_val(*pud));
+
+        pmd = pmd_offset(pud, addr);
+        if (pmd_none(*pmd))
+                goto out;
+        pr_info("PMD: 0x%p\t0x%lx\n", pmd, pmd_val(*pmd));
+
+        pte = pte_offset_map(pmd, addr);
+        if (pte_none(*pte))
+                goto out;
+        pr_info("PTE: 0x%p\t0x%lx\n", pte, pte_val(*pte));
+
+        return pte;
+
+out:
+        return NULL;
+}
+
+/*
+ * rare write to the read-only memory.
+ * https://lwn.net/Articles/724319/
+ *
+ * Note
+ * - x86 only.
+ * - rare-write mechanism is open for the disucssion in the
+ *   area of hardening Linux Kernel.
+ */
+
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
 {
         long ret = 0;
 
         switch (cmd) {
         case SET_EVENT_HANDLER:
-                set_percpu_event_handler();
+                set_event_handler();
                 break;
         case RESTORE_EVENT_HANDLER:
-                restore_percpu_event_handler();
+                restore_event_handler();
                 break;
         case PRINT_DID:
                 print_did();
                 break;
-        case MAP_PID:
-                if (!map_percpu_posted_interrupt_descriptor())
-                        ret = -EPERM;
+        case HC_MAP_PID:
+                if (!hc_map_posted_interrupt_descriptor())
+                        ret = -EAGAIN;
                 break;
-        case UNMAP_PID:
-                if (!unmap_percpu_posted_interrupt_descriptor())
-                        ret = -EPERM;
+        case HC_UNMAP_PID:
+                if (!hc_unmap_posted_interrupt_descriptor())
+                        ret = -EAGAIN;
                 break;
-        case PAGE_WALK:
-                if (!percpu_page_walk())
-                        ret = -EPERM;
+        case HC_PAGE_WALK:
+                if (!hc_page_walk())
+                        ret = -EAGAIN;
                 break;
         case SET_CLOCKEVENT_FACTOR:
-                ret = set_percpu_clockevent_factor(arg);
+                ret = set_clockevent_factor(arg);
                 break;
         case RESTORE_CLOCKEVENT_FACTOR:
-                restore_percpu_clockevent_factor();
+                restore_clockevent_factor();
                 break;
-        case SETUP_DID:
-                ret = setup_percpu_did(arg);
+        case HC_SETUP_DID:
+                ret = hc_setup_did(arg);
                 break;
-        case RESTORE_DID:
-                if (!restore_percpu_did())
-                        ret = -EPERM;
+        case HC_RESTORE_DID:
+                if (!hc_restore_did())
+                        ret = -EAGAIN;
                 break;
         case SET_APIC_IPI:
                 set_apic_ipi();
@@ -568,6 +614,22 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case HYPERCALL_ENABLE_INTERCEPT_WRMSR_ICR:
                 hypercall_enable_intercept_wrmsr_icr();
                 break;
+        case PAGE_WALK_INIT_MM: {
+                struct mm_struct *mm =
+                        (struct mm_struct *) kallsyms_lookup_name("init_mm");
+                unsigned long apic_driver =
+                        kallsyms_lookup_name("apic_x2apic_phys");
+
+                pr_info("apic_driver: 0x%lx\n", __pa(apic_driver));
+                pr_info("apic_driver: 0x%lx\n", apic_driver);
+                page_walk(mm, apic_driver);
+
+                pr_info("apic: 0x%lx\n", __pa(&apic));
+                pr_info("apic: 0x%p\n", &apic);
+                page_walk(mm, (unsigned long)&apic);
+
+                break;
+        }
         default:
                 pr_alert("No such an ioctl option.\n");
                 ret = -EINVAL;
