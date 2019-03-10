@@ -369,11 +369,71 @@ static bool hc_restore_did(void)
         return ret;
 }
 
+/*
+ * rare write to the read-only memory.
+ * https://lwn.net/Articles/724319/
+ *
+ * Note
+ * - x86 only.
+ * - CR0 WP control (or bit 16) is 1. The CPU cannot write to
+ *   read-only page, when CPL = 0.
+ * - NOT for the preemptable kernel.
+ * - rare-write mechanism is open for the discussion in the
+ *   area of hardening Linux Kernel.
+ */
+static __always_inline unsigned long x86_rare_write_begin(void)
+{
+        unsigned long cr0;
+
+        cr0 = read_cr0() ^ X86_CR0_WP;
+        BUG_ON(cr0 & X86_CR0_WP);
+        write_cr0(cr0);
+
+        return cr0;
+}
+
+static __always_inline unsigned long x86_rare_write_end(void)
+{
+        unsigned long cr0;
+
+        cr0 = read_cr0() ^ X86_CR0_WP;
+        BUG_ON(!(cr0 & X86_CR0_WP));
+        write_cr0(cr0);
+
+        return cr0;
+}
+
+static __always_inline void rare_write_begin(void)
+{
+        unsigned long cr0;
+
+        local_irq_disable();
+        barrier();
+        cr0 = x86_rare_write_begin();
+        barrier();
+
+        pr_info("%s: 0x%lx\n", __func__, cr0);
+}
+
+static __always_inline void rare_write_end(void)
+{
+        unsigned long cr0;
+
+        barrier();
+        cr0 = x86_rare_write_end();
+        barrier();
+        local_irq_enable();
+
+        pr_info("%s: %lx\n", __func__, cr0);
+}
+
 /* IPI */
 static void did_send_IPI(int cpu, int vector)
 {
         set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
         ipi->send_IPI(cpu, POSTED_INTR_VECTOR);
+        //ipi->send_IPI(cpu, vector);
+        //pr_info("%s\n", __func__);
 }
 
 static void did_send_IPI_mask(const struct cpumask *mask, int vector)
@@ -384,6 +444,8 @@ static void did_send_IPI_mask(const struct cpumask *mask, int vector)
                 set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
 
         ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
+        //ipi->send_IPI_mask(mask, vector);
+        //pr_info("%s\n", __func__);
 }
 
 static void did_send_IPI_mask_allbutself(const struct cpumask *mask, int vector)
@@ -399,6 +461,8 @@ static void did_send_IPI_mask_allbutself(const struct cpumask *mask, int vector)
         }
 
         ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
+        //ipi->send_IPI_mask(mask, vector);
+        //pr_info("%s\n", __func__);
 }
 
 static void did_send_IPI_allbutself(int vector)
@@ -417,6 +481,8 @@ static void did_send_IPI_self(int vector)
 
         set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
         ipi->send_IPI_self(POSTED_INTR_VECTOR);
+        //apic_write(APIC_SELF_IPI, vector);
+        //pr_info("%s\n", __func__);
 }
 
 static void print_apic_ipi(void)
@@ -441,25 +507,29 @@ static void set_apic_ipi(void)
         ipi->send_IPI_all = apic->send_IPI_all;
         ipi->send_IPI_self = apic->send_IPI_self;
 
-        /* TODO: apic is in the READ-ONLY section */
+        /* rare-write apic located in .data..ro_after_init */
+        rare_write_begin();
         apic->send_IPI = did_send_IPI;
         apic->send_IPI_mask = did_send_IPI_mask;
         apic->send_IPI_mask_allbutself = did_send_IPI_mask_allbutself;
         apic->send_IPI_allbutself = did_send_IPI_allbutself;
         apic->send_IPI_all = did_send_IPI_all;
         apic->send_IPI_self = did_send_IPI_self;
+        rare_write_end();
 
         print_apic_ipi();
 }
 
 static void restore_apic_ipi(void)
 {
+        rare_write_begin();
         apic->send_IPI = ipi->send_IPI;
         apic->send_IPI_mask = ipi->send_IPI_mask;
         apic->send_IPI_mask_allbutself = ipi->send_IPI_mask_allbutself;
         apic->send_IPI_allbutself = ipi->send_IPI_allbutself;
         apic->send_IPI_all = ipi->send_IPI_all;
         apic->send_IPI_self = ipi->send_IPI_self;
+        rare_write_end();
 }
 
 static void get_x2apic_id(void)
@@ -540,16 +610,6 @@ static pte_t *page_walk(struct mm_struct *mm, unsigned long addr)
 out:
         return NULL;
 }
-
-/*
- * rare write to the read-only memory.
- * https://lwn.net/Articles/724319/
- *
- * Note
- * - x86 only.
- * - rare-write mechanism is open for the disucssion in the
- *   area of hardening Linux Kernel.
- */
 
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
 {
