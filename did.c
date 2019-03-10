@@ -417,8 +417,21 @@ static void did_send_IPI_self(int vector)
         ipi->send_IPI_self(POSTED_INTR_VECTOR);
 }
 
+static void print_apic_ipi(void)
+{
+        pr_info("send_IPI:                 0x%p\n", apic->send_IPI);
+        pr_info("send_IPI_mask:            0x%p\n", apic->send_IPI_mask);
+        pr_info("send_IPI_mask_allbutself: 0x%p\n",
+                apic->send_IPI_mask_allbutself);
+        pr_info("send_IPI_allbutself:      0x%p\n", apic->send_IPI_allbutself);
+        pr_info("send_IPI_all:             0x%p\n", apic->send_IPI_all);
+        pr_info("send_IPI_self:            0x%p\n", apic->send_IPI_self);
+}
+
 static void set_apic_ipi(void)
 {
+        print_apic_ipi();
+
         ipi->send_IPI = apic->send_IPI;
         ipi->send_IPI_mask = apic->send_IPI_mask;
         ipi->send_IPI_mask_allbutself = apic->send_IPI_mask_allbutself;
@@ -433,6 +446,8 @@ static void set_apic_ipi(void)
         apic->send_IPI_allbutself = did_send_IPI_allbutself;
         apic->send_IPI_all = did_send_IPI_all;
         apic->send_IPI_self = did_send_IPI_self;
+
+        print_apic_ipi();
 }
 
 static void restore_apic_ipi(void)
