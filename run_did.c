@@ -27,13 +27,15 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- page_walk\n");
                 fprintf(stderr, "- set_clockevent_factor\n");
                 fprintf(stderr, "- restore_clockevent_factor\n");
-                fprintf(stderr, "- setup_did <mult> <shift>\n");
-                fprintf(stderr, "- restore_did\n");
                 fprintf(stderr, "- set_apic_ipi\n");
                 fprintf(stderr, "- restore_apic_ipi\n");
-                fprintf(stderr, "- disable_intercept_wrmsr_icr\n");
-                fprintf(stderr, "- enable_intercept_wrmsr_icr\n");
                 fprintf(stderr, "- page_talk_init_mm\n");
+                fprintf(stderr, "- hc_set_x2apic_id\n");
+                fprintf(stderr, "- hc_restore_x2apic_id\n");
+                fprintf(stderr, "- hc_setup_dtid <mult> <shift>\n");
+                fprintf(stderr, "- hc_restore_dtid\n");
+                fprintf(stderr, "- hc_disable_intercept_wrmsr_icr\n");
+                fprintf(stderr, "- enable_intercept_wrmsr_icr\n");
                 return -1;
         }
         char *op = argv[1];
@@ -52,10 +54,10 @@ int main(int argc, char *argv[])
         }
 
         if (strcmp(op, "set_event_handler") == 0) {
-                if (ioctl(fd, SET_EVENT_HANDLER) < 0)
+                if (ioctl(fd, SET_TIMER_EVENT_HANDLER) < 0)
                         goto error;
         } else if (strcmp(op, "restore_event_handler") == 0) {
-                if (ioctl(fd, RESTORE_EVENT_HANDLER) < 0)
+                if (ioctl(fd, RESTORE_TIMER_EVENT_HANDLER) < 0)
                         goto error;
         } else if (strcmp(op, "print_did") == 0) {
                 if (ioctl(fd, PRINT_DID) < 0)
@@ -78,15 +80,6 @@ int main(int argc, char *argv[])
         } else if (strcmp(op, "restore_clockevent_factor") == 0) {
                 if (ioctl(fd, RESTORE_CLOCKEVENT_FACTOR) < 0)
                         goto error;
-        } else if (strcmp(op, "setup_did") == 0) {
-                clockevent_device_t data =
-                        (clockevent_device_t){"lapic", args[0], args[1]};
-
-                if (ioctl(fd, HC_SETUP_DID, &data) < 0)
-                        goto error;
-        } else if (strcmp(op, "restore_did") == 0) {
-                if (ioctl(fd, HC_RESTORE_DID) < 0)
-                        goto error;
         } else if (strcmp(op, "set_apic_ipi") == 0) {
                 if (ioctl(fd, SET_APIC_IPI) < 0)
                         goto error;
@@ -104,17 +97,29 @@ int main(int argc, char *argv[])
 
                 if (ioctl(fd, SET_X2APIC_ID2, apicid) < 0)
                         goto error;
-        } else if (strcmp(op, "hc_set_x2apic_id") == 0) {
-                if (ioctl(fd, HYPERCALL_SET_X2APIC_ID) < 0)
-                        goto error;
-        } else if (strcmp(op, "hc_disable_intercept_wrmsr_icr") == 0) {
-                if (ioctl(fd, HYPERCALL_DISABLE_INTERCEPT_WRMSR_ICR) < 0)
-                        goto error;
-        } else if (strcmp(op, "hc_enable_intercept_wrmsr_icr") == 0) {
-                if (ioctl(fd, HYPERCALL_ENABLE_INTERCEPT_WRMSR_ICR) < 0)
-                        goto error;
         } else if (strcmp(op, "page_walk_init_mm") == 0) {
                 if (ioctl(fd, PAGE_WALK_INIT_MM) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_set_x2apic_id") == 0) {
+                if (ioctl(fd, HC_SET_X2APIC_ID) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_restore_x2apic_id") == 0) {
+                if (ioctl(fd, HC_RESTORE_X2APIC_ID) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_setup_dtid") == 0) {
+                clockevent_device_t data =
+                        (clockevent_device_t){"lapic", args[0], args[1]};
+
+                if (ioctl(fd, HC_SETUP_DTID, &data) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_restore_dtid") == 0) {
+                if (ioctl(fd, HC_RESTORE_DTID) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_disable_intercept_wrmsr_icr") == 0) {
+                if (ioctl(fd, HC_DISABLE_INTERCEPT_WRMSR_ICR) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_enable_intercept_wrmsr_icr") == 0) {
+                if (ioctl(fd, HC_ENABLE_INTERCEPT_WRMSR_ICR) < 0)
                         goto error;
         } else {
                 fprintf(stderr, "No such option: %s\n", op);

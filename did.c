@@ -167,15 +167,16 @@ static void deallocate(void)
  * timer-interrupt bit.
  */
 //#define PI_ON 0x100   /* ON bit is at 256 */
-static void pi_set_timer_interrupt(unsigned long *pid)
-{
-        __set_bit(LOCAL_TIMER_VECTOR, pid);
-        //__set_bit(PI_ON, pid);
-}
-
 static void set_posted_interrupt(u32 vector, unsigned long *pid)
 {
         __set_bit(vector, pid);
+}
+
+static void pi_set_timer_interrupt(unsigned long *pid)
+{
+        //__set_bit(LOCAL_TIMER_VECTOR, pid);
+        //__set_bit(PI_ON, pid);
+        set_posted_interrupt(LOCAL_TIMER_VECTOR, pid);
 }
 
 /*
@@ -218,7 +219,7 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
  * handler. The usespace program have to call the module on
  * every online CPUs.
  */
-static void set_event_handler(void)
+static void set_timer_event_handler(void)
 {
         int cpu = smp_processor_id();
         struct clock_event_device *evt = this_cpu_ptr(lapic_events);
@@ -227,7 +228,7 @@ static void set_event_handler(void)
         evt->event_handler = timer_interrupt_handler;
 }
 
-static void restore_event_handler(void)
+static void restore_timer_event_handler(void)
 {
         int cpu = smp_processor_id();
         struct clock_event_device *evt = this_cpu_ptr(lapic_events);
@@ -317,58 +318,6 @@ static void restore_clockevent_factor(void)
         evt->shift = dids[cpu].shift;
 }
 
-static int hc_setup_did(unsigned long user_arg)
-{
-        int ret = 0;
-        unsigned int cpu = smp_processor_id();
-        unsigned long pid = dids[cpu].pid;
-        int offset;
-
-        ret = set_clockevent_factor(user_arg);
-
-        offset = kvm_hypercall1(KVM_HC_SETUP_DID, virt_to_phys((void *)pid));
-
-        if (offset >= 0) {
-                dids[cpu].start = (pid & ~0xFFF) | offset;
-                pr_info("cpu(%u): setting up did succeed: 0x%x\n", cpu, offset);
-
-                set_event_handler();
-
-                pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
-                apic_write(APIC_TMICT, 0x616d);
-        } else {
-                pr_alert("setting up did fails: %u\t%d\n", cpu, offset);
-                ret = -EPERM;
-        }
-
-        return ret;
-}
-
-static bool hc_restore_did(void)
-{
-        bool ret = true;
-        unsigned int cpu = smp_processor_id();
-        unsigned long pid = dids[cpu].pid;
-        int res;
-
-        restore_event_handler();
-
-        res = kvm_hypercall1(KVM_HC_RESTORE_DID, virt_to_phys((void *)pid));
-
-        if (res) {
-                dids[cpu].start = 0;
-                pr_info("cpu(%u): restoring did succeed\n", cpu);
-        } else {
-                pr_alert("cpu(%u): restoring did fails: %d\n", cpu, res);
-                ret = false;
-        }
-
-        restore_clockevent_factor();
-        apic_write(APIC_TMICT, 0x616d);
-
-        return ret;
-}
-
 /*
  * rare write to the read-only memory.
  * https://lwn.net/Articles/724319/
@@ -424,7 +373,7 @@ static __always_inline void rare_write_end(void)
         barrier();
         local_irq_enable();
 
-        pr_info("%s: %lx\n", __func__, cr0);
+        pr_info("%s: 0x%lx\n", __func__, cr0);
 }
 
 /* IPI */
@@ -534,35 +483,54 @@ static void restore_apic_ipi(void)
 
 static void get_x2apic_id(void)
 {
-        int cpu = smp_processor_id();
+        int cpu;
         int apicid;
 
+        cpu = smp_processor_id();
         apicid = per_cpu(x86_cpu_to_apicid, cpu);
         pr_info("phys x2apic id: 0x%x\n", apicid);
 }
 
 static void set_x2apic_id(void)
 {
-        int cpu = smp_processor_id();
+        int cpu;
         int apicid;
 
         rdmsrl(APIC_BASE_MSR + (APIC_ID >> 4), apicid);
+
+        cpu = smp_processor_id();
         per_cpu(x86_cpu_to_apicid, cpu) = apicid;
         pr_info("0x%x\n", per_cpu(x86_cpu_to_apicid, cpu));
+}
+
+static void restore_x2apic_id(void)
+{
+        set_x2apic_id();
 }
 
 static void set_x2apic_id2(unsigned long apicid)
 {
-        int cpu = smp_processor_id();
+        int cpu;
 
+        cpu = smp_processor_id();
         per_cpu(x86_cpu_to_apicid, cpu) = apicid;
         pr_info("0x%x\n", per_cpu(x86_cpu_to_apicid, cpu));
 }
 
-static void hypercall_set_x2apic_id(void)
+static void hc_set_x2apic_id(void)
 {
         kvm_hypercall0(KVM_HC_SET_X2APIC_ID);
         pr_info("hypercall to set up x2apic id\n");
+
+        set_x2apic_id();
+}
+
+static void hc_restore_x2apic_id(void)
+{
+        kvm_hypercall0(KVM_HC_RESTORE_X2APIC_ID);
+        pr_info("hypercall to set up x2apic id\n");
+
+        restore_x2apic_id();
 }
 
 static void hypercall_disable_intercept_wrmsr_icr(void)
@@ -611,16 +579,70 @@ out:
         return NULL;
 }
 
+static int hc_setup_dtid(unsigned long user_arg)
+{
+        int ret = 0;
+        unsigned long pid;
+        unsigned int cpu;
+        int offset;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        offset = kvm_hypercall1(KVM_HC_SETUP_DTID, virt_to_phys((void *)pid));
+
+        if (offset >= 0) {
+                ret = set_clockevent_factor(user_arg);
+                set_timer_event_handler();
+
+                dids[cpu].start = (pid & ~0xFFF) | offset;
+                pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
+                apic_write(APIC_TMICT, 0x616d);
+
+                pr_info("cpu(%u): setting up dtid succeed: 0x%x\n", cpu, offset);
+        } else {
+                pr_alert("setting up dtid fails: %u\t%d\n", cpu, offset);
+                ret = -EPERM;
+        }
+
+        return ret;
+}
+
+static bool hc_restore_dtid(void)
+{
+        bool ret = true;
+        unsigned int cpu;
+        unsigned long pid;
+        int res;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        res = kvm_hypercall1(KVM_HC_RESTORE_DTID, virt_to_phys((void *)pid));
+
+        if (res) {
+                restore_clockevent_factor();
+                restore_timer_event_handler();
+                apic_write(APIC_TMICT, 0x616d);
+
+                dids[cpu].start = 0;
+                pr_info("cpu(%u): restoring dtid succeed\n", cpu);
+        } else {
+                pr_alert("cpu(%u): restoring dtid fails: %d\n", cpu, res);
+                ret = false;
+        }
+
+        return ret;
+}
+
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
 {
         long ret = 0;
 
         switch (cmd) {
-        case SET_EVENT_HANDLER:
-                set_event_handler();
+        case SET_TIMER_EVENT_HANDLER:
+                set_timer_event_handler();
                 break;
-        case RESTORE_EVENT_HANDLER:
-                restore_event_handler();
+        case RESTORE_TIMER_EVENT_HANDLER:
+                restore_timer_event_handler();
                 break;
         case PRINT_DID:
                 print_did();
@@ -643,13 +665,6 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case RESTORE_CLOCKEVENT_FACTOR:
                 restore_clockevent_factor();
                 break;
-        case HC_SETUP_DID:
-                ret = hc_setup_did(arg);
-                break;
-        case HC_RESTORE_DID:
-                if (!hc_restore_did())
-                        ret = -EAGAIN;
-                break;
         case SET_APIC_IPI:
                 set_apic_ipi();
                 break;
@@ -665,13 +680,23 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case SET_X2APIC_ID2:
                 set_x2apic_id2(arg);
                 break;
-        case HYPERCALL_SET_X2APIC_ID:
-                hypercall_set_x2apic_id();
+        case HC_SETUP_DTID:
+                ret = hc_setup_dtid(arg);
                 break;
-        case HYPERCALL_DISABLE_INTERCEPT_WRMSR_ICR:
+        case HC_RESTORE_DTID:
+                if (!hc_restore_dtid())
+                        ret = -EAGAIN;
+                break;
+        case HC_SET_X2APIC_ID:
+                hc_set_x2apic_id();
+                break;
+        case HC_RESTORE_X2APIC_ID:
+                hc_restore_x2apic_id();
+                break;
+        case HC_DISABLE_INTERCEPT_WRMSR_ICR:
                 hypercall_disable_intercept_wrmsr_icr();
                 break;
-        case HYPERCALL_ENABLE_INTERCEPT_WRMSR_ICR:
+        case HC_ENABLE_INTERCEPT_WRMSR_ICR:
                 hypercall_enable_intercept_wrmsr_icr();
                 break;
         case PAGE_WALK_INIT_MM: {
@@ -716,9 +741,9 @@ static int __init my_init(void)
         int ret = misc_register(&misc_device);
 
         if (ret >= 0) {
-                unsigned long per_cpu_clock_event =
+                unsigned long clock_event =
                         kallsyms_lookup_name("lapic_events");
-                lapic_events = (struct clock_event_device *)per_cpu_clock_event;
+                lapic_events = (struct clock_event_device *)clock_event;
                 ncpus = num_online_cpus();
 
                 allocate();
