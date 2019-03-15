@@ -15,6 +15,8 @@
 #include <linux/list.h>
 #include <linux/clockchips.h>
 #include <linux/cpumask.h>
+#include <linux/moduleparam.h>
+#include <linux/stat.h>
 #include <asm/uaccess.h>
 #include <asm/kvm_para.h>
 #include <asm/irq_vectors.h>
@@ -23,6 +25,10 @@
 #include <asm/pgalloc.h>
 
 #include "did.h"
+
+static bool dipi = true;
+module_param(dipi, bool, 0644);
+MODULE_PARM_DESC(dipi, "direct ipi");
 
 static u32 ncpus;
 static struct clock_event_device *lapic_events;
@@ -144,8 +150,8 @@ static void deallocate(void)
                 }
 
                 kfree(dids);
-                dids = NULL;
                 pr_info("pid array is freed: 0x%p\n", dids);
+                dids = NULL;
         }
 
         if (ipi) {
@@ -204,8 +210,14 @@ static bool bypass_early_timer_interrupt(int cpu, ktime_t next_event)
 static void timer_interrupt_handler(struct clock_event_device *dev)
 {
         void (*event_handler)(struct clock_event_device *);
-        int cpu = smp_processor_id();
-        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+        int cpu;
+        struct clock_event_device *evt;
+
+        cpu = smp_processor_id();
+        evt = this_cpu_ptr(lapic_events);
+
+        if (cpu == 2)
+                trace_printk("%llu\n", ktime_get());
 
         if (bypass_early_timer_interrupt(cpu, evt->next_event))
                 return;
@@ -377,41 +389,66 @@ static __always_inline void rare_write_end(void)
 }
 
 /* IPI */
+void print_ipi_dmesg(int cpu, int vector)
+{
+        int scpu;
+
+        scpu = smp_processor_id();
+        trace_printk("%d->%d: 0x%x\n", scpu, cpu, vector);
+}
+
 static void did_send_IPI(int cpu, int vector)
 {
-        set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
-        ipi->send_IPI(cpu, POSTED_INTR_VECTOR);
-        //ipi->send_IPI(cpu, vector);
-        //pr_info("%s\n", __func__);
+        if (dipi) {
+                unsigned long *pid;
+
+                pid = (unsigned long *)dids[cpu].start;
+                set_posted_interrupt(vector, pid);
+
+                ipi->send_IPI(cpu, POSTED_INTR_VECTOR);
+        } else {
+                ipi->send_IPI(cpu, vector);
+        }
+        print_ipi_dmesg(cpu, vector);
 }
 
 static void did_send_IPI_mask(const struct cpumask *mask, int vector)
 {
-        unsigned long cpu;
+        if (dipi) {
+                unsigned long cpu;
+                unsigned long *pid;
 
-        for_each_cpu(cpu, mask)
-                set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
+                for_each_cpu(cpu, mask) {
+                        pid = (unsigned long *)dids[cpu].start;
+                        set_posted_interrupt(vector, pid);
+                }
 
-        ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
-        //ipi->send_IPI_mask(mask, vector);
-        //pr_info("%s\n", __func__);
+                ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
+        } else {
+                ipi->send_IPI_mask(mask, vector);
+        }
 }
 
 static void did_send_IPI_mask_allbutself(const struct cpumask *mask, int vector)
 {
-        unsigned long this_cpu = smp_processor_id();
-        unsigned long query_cpu;
+        if (dipi) {
+                unsigned long this_cpu;
+                unsigned long query_cpu;
+                unsigned long *pid;
 
-        for_each_cpu(query_cpu, mask) {
-                if (query_cpu == this_cpu)
-                        continue;
-                set_posted_interrupt(vector,
-                                     (unsigned long *)dids[query_cpu].start);
+                for_each_cpu(query_cpu, mask) {
+                        this_cpu = smp_processor_id();
+                        if (query_cpu == this_cpu)
+                                continue;
+
+                        pid = (unsigned long *)dids[query_cpu].start;
+                        set_posted_interrupt(vector, pid);
+                }
+
+                ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
+        } else {
+                ipi->send_IPI_mask(mask, vector);
         }
-
-        ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
-        //ipi->send_IPI_mask(mask, vector);
-        //pr_info("%s\n", __func__);
 }
 
 static void did_send_IPI_allbutself(int vector)
@@ -426,12 +463,19 @@ static void did_send_IPI_all(int vector)
 
 static void did_send_IPI_self(int vector)
 {
-        unsigned long cpu = smp_processor_id();
+        if (dipi) {
+                unsigned long cpu;
+                unsigned long *pid;
 
-        set_posted_interrupt(vector, (unsigned long *)dids[cpu].start);
-        ipi->send_IPI_self(POSTED_INTR_VECTOR);
-        //apic_write(APIC_SELF_IPI, vector);
-        //pr_info("%s\n", __func__);
+                cpu = smp_processor_id();
+                pid = (unsigned long *)dids[cpu].start;
+
+                set_posted_interrupt(vector, pid);
+
+                ipi->send_IPI_self(POSTED_INTR_VECTOR);
+        } else {
+                ipi->send_IPI_self(vector);
+        }
 }
 
 static void print_apic_ipi(void)

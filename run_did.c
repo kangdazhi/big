@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
         int ret;
 
         if (argc < 2) {
-                fprintf(stderr, "Usage: %s <percpu op> [arg|[arg]]\n", argv[0]);
+                fprintf(stderr, "Usage: %s <op> [arg|[arg]]\n", argv[0]);
                 fprintf(stderr, "- set_event_handler\n");
                 fprintf(stderr, "- restore_event_handler\n");
                 fprintf(stderr, "- print_did\n");

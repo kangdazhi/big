@@ -7,7 +7,7 @@ modules:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 insert:
-	insmod did.ko
+	insmod did.ko dipi=1
 
 remove:
 	rmmod did
