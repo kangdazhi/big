@@ -44,11 +44,18 @@ typedef struct clockevent_device_t {
 #define RESTORE_CLOCKEVENT_FACTOR       _IO('k', 2004)
 
 /* ipi */
-#define SET_APIC_IPI                            _IO('k', 3000)
-#define RESTORE_APIC_IPI                        _IO('k', 3001)
-#define GET_X2APIC_ID                           _IO('k', 3002)
-#define SET_X2APIC_ID                           _IO('k', 3003)
-#define SET_X2APIC_ID2                          _IO('k', 3004)
+typedef struct ipi_t {
+        int cpu;
+        int vector;
+} ipi_t;
+
+#define SET_APIC_IPI                    _IO('k', 3000)
+#define RESTORE_APIC_IPI                _IO('k', 3001)
+#define GET_X2APIC_ID                   _IO('k', 3002)
+#define SET_X2APIC_ID                   _IO('k', 3003)
+#define SET_X2APIC_ID2                  _IO('k', 3004)
+#define RESTORE_X2APIC_ID               _IO('k', 3005)
+#define SEND_IPI                        _IOW('k', 3006, ipi_t *)
 
 /* page table */
 #define PAGE_WALK_INIT_MM       _IO('k', 4000)

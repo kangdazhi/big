@@ -22,14 +22,18 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- set_event_handler\n");
                 fprintf(stderr, "- restore_event_handler\n");
                 fprintf(stderr, "- print_did\n");
-                fprintf(stderr, "- map_pid\n");
-                fprintf(stderr, "- unmap_pid\n");
-                fprintf(stderr, "- page_walk\n");
                 fprintf(stderr, "- set_clockevent_factor\n");
                 fprintf(stderr, "- restore_clockevent_factor\n");
                 fprintf(stderr, "- set_apic_ipi\n");
                 fprintf(stderr, "- restore_apic_ipi\n");
                 fprintf(stderr, "- page_talk_init_mm\n");
+                fprintf(stderr, "- set_x2apic_id\n");
+                fprintf(stderr, "- get_x2apic_id\n");
+                fprintf(stderr, "- restore_x2apic_id\n");
+                fprintf(stderr, "- send_ipi <cpu> <vector>\n");
+                fprintf(stderr, "- hc_map_pid\n");
+                fprintf(stderr, "- hc_unmap_pid\n");
+                fprintf(stderr, "- hc_page_walk\n");
                 fprintf(stderr, "- hc_set_x2apic_id\n");
                 fprintf(stderr, "- hc_restore_x2apic_id\n");
                 fprintf(stderr, "- hc_setup_dtid <mult> <shift>\n");
@@ -62,15 +66,6 @@ int main(int argc, char *argv[])
         } else if (strcmp(op, "print_did") == 0) {
                 if (ioctl(fd, PRINT_DID) < 0)
                         goto error;
-        } else if (strcmp(op, "map_pid") == 0) {
-                if (ioctl(fd, HC_MAP_PID) < 0)
-                        goto error;
-        } else if (strcmp(op, "unmap_pid") == 0) {
-                if (ioctl(fd, HC_UNMAP_PID) < 0)
-                        goto error;
-        } else if (strcmp(op, "page_walk") == 0) {
-                if (ioctl(fd, HC_PAGE_WALK) < 0)
-                        goto error;
         } else if (strcmp(op, "set_clockevent_factor") == 0) {
                 clockevent_device_t data =
                         (clockevent_device_t){"lapic", args[0], args[1]};
@@ -92,6 +87,9 @@ int main(int argc, char *argv[])
         } else if (strcmp(op, "set_x2apic_id") == 0) {
                 if (ioctl(fd, SET_X2APIC_ID) < 0)
                         goto error;
+        } else if (strcmp(op, "restore_x2apic_id") == 0) {
+                if (ioctl(fd, RESTORE_X2APIC_ID) < 0)
+                        goto error;
         } else if (strcmp(op, "set_x2apic_id2") == 0) {
                 unsigned long apicid = strtoul(argv[2], NULL, 16);
 
@@ -99,6 +97,23 @@ int main(int argc, char *argv[])
                         goto error;
         } else if (strcmp(op, "page_walk_init_mm") == 0) {
                 if (ioctl(fd, PAGE_WALK_INIT_MM) < 0)
+                        goto error;
+        } else if (strcmp(op, "send_ipi") == 0) {
+                ipi_t ipi;
+
+                ipi.cpu = atoi(argv[2]);
+                ipi.vector = strtoul(argv[3], NULL, 16);
+
+                if (ioctl(fd, SEND_IPI, &ipi) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_map_pid") == 0) {
+                if (ioctl(fd, HC_MAP_PID) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_unmap_pid") == 0) {
+                if (ioctl(fd, HC_UNMAP_PID) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_page_walk") == 0) {
+                if (ioctl(fd, HC_PAGE_WALK) < 0)
                         goto error;
         } else if (strcmp(op, "hc_set_x2apic_id") == 0) {
                 if (ioctl(fd, HC_SET_X2APIC_ID) < 0)

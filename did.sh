@@ -17,21 +17,22 @@ enable()
         local kmult=$2
         local kshift=$3
 
-        #for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_set_x2apic_id; done 
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_setup_dtid $kmult $kshift; done
         ./run_did set_apic_ipi
         ./run_did hc_disable_intercept_wrmsr_icr
+        for i in `seq $cpus -1 0`; do taskset -c $i ./run_did set_x2apic_id; done 
+        for i in `seq 0 $cpus`; do taskset -c 0 ./run_did send_ipi $i 0xef; done 
 }
 
 disable()
 {
         local cpus=$(($1 - 1))
 
+        for i in `seq 0 $cpus`; do taskset -c $i ./run_did restore_x2apic_id; done 
         ./run_did hc_enable_intercept_wrmsr_icr
         ./run_did restore_apic_ipi
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_dtid; done
         for i in `seq 0 $cpus`; do wrmsr -p $i 0x838 0x616d; done
-        #for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_x2apic_id; done 
 }
 
 if [ $op = "enable" ]; then
@@ -41,3 +42,7 @@ elif [ $op = "disable" ]; then
 else
         echo "no such operation"
 fi
+
+# to be deleted
+#for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_set_x2apic_id; done 
+#for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_x2apic_id; done 

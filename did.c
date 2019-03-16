@@ -91,10 +91,13 @@ static void print_did(void)
 static bool allocate(void)
 {
         u32 i;
-        bool ret = true;
+        bool ret;
+
         dids = kcalloc(ncpus, sizeof(*dids), GFP_ATOMIC);
 
         if (dids) {
+                ret = true;
+
                 for (i = 0; i < ncpus; i++) {
                         void *page = kmalloc(PAGE_SIZE, GFP_ATOMIC);
                         if (page) {
@@ -105,8 +108,8 @@ static bool allocate(void)
                         }
                 }
         } else {
-                pr_alert("Fail to allocate pid array\n");
                 ret = false;
+                pr_alert("Fail to allocate pid array\n");
         }
 
         ipi = kzalloc(sizeof(*ipi), GFP_ATOMIC);
@@ -122,10 +125,12 @@ static void touch_page(void)
 {
         if (dids) {
                 u32 i;
+                const char *data;
+                char temp;
+
                 for (i = 0; i < ncpus; i++) {
-                        const char *data = (const char *)dids[i].pid;
+                        data = (const char *)dids[i].pid;
                         if (data) {
-                                char temp;
                                 temp = data[0];
                                 temp = data[PAGE_SIZE - 1];
                         }
@@ -137,8 +142,10 @@ static void deallocate(void)
 {
         if (dids) {
                 u32 i;
+                void *pid;
+
                 for (i = 0; i < ncpus; i++) {
-                        void *pid = (void *)dids[i].pid;
+                        pid = (void *)dids[i].pid;
                         kfree(pid);
                         pr_info("pid page is freed : 0x%p\n", pid);
 
@@ -180,7 +187,6 @@ static void set_posted_interrupt(u32 vector, unsigned long *pid)
 
 static void pi_set_timer_interrupt(unsigned long *pid)
 {
-        //__set_bit(LOCAL_TIMER_VECTOR, pid);
         //__set_bit(PI_ON, pid);
         set_posted_interrupt(LOCAL_TIMER_VECTOR, pid);
 }
@@ -193,8 +199,11 @@ static void pi_set_timer_interrupt(unsigned long *pid)
 static bool bypass_early_timer_interrupt(int cpu, ktime_t next_event)
 {
         ktime_t now;
-        bool ret = false;
-        bool mapped = dids && dids[cpu].start;
+        bool ret;
+        bool mapped;
+
+        ret = false;
+        mapped = dids && dids[cpu].start;
 
         if (mapped) {
                 pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
@@ -216,9 +225,6 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
         cpu = smp_processor_id();
         evt = this_cpu_ptr(lapic_events);
 
-        if (cpu == 2)
-                trace_printk("%llu\n", ktime_get());
-
         if (bypass_early_timer_interrupt(cpu, evt->next_event))
                 return;
 
@@ -233,31 +239,42 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
  */
 static void set_timer_event_handler(void)
 {
-        int cpu = smp_processor_id();
-        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+        int cpu;
+        struct clock_event_device *evt;
 
+        cpu = smp_processor_id();
+        evt = this_cpu_ptr(lapic_events);
         dids[cpu].event_handler = evt->event_handler;
+
         evt->event_handler = timer_interrupt_handler;
 }
 
 static void restore_timer_event_handler(void)
 {
-        int cpu = smp_processor_id();
-        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+        int cpu;
+        struct clock_event_device *evt;
 
+        cpu = smp_processor_id();
+        evt = this_cpu_ptr(lapic_events);
         evt->event_handler = dids[cpu].event_handler;
 }
 
 static bool hc_map_posted_interrupt_descriptor(void)
 {
-        bool ret = true;
-        unsigned int cpu = smp_processor_id();
-        unsigned long pid = dids[cpu].pid;
-        int offset = kvm_hypercall1(KVM_HC_MAP_PID, virt_to_phys((void *)pid));
+        bool ret;
+        unsigned int cpu;
+        unsigned long pid;
+        int offset;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        offset = kvm_hypercall1(KVM_HC_MAP_PID, virt_to_phys((void *)pid));
 
         if (offset >= 0) {
                 dids[cpu].start = (pid & ~0xFFF) | offset;
                 pr_info("cpu(%u): mapping pid succeed: 0x%x\n", cpu, offset);
+                ret = true;
+
         } else {
                 pr_alert("maping pid fails: %u\t%d\n", cpu, offset);
                 ret = false;
@@ -268,14 +285,19 @@ static bool hc_map_posted_interrupt_descriptor(void)
 
 static bool hc_unmap_posted_interrupt_descriptor(void)
 {
-        bool ret = true;
-        unsigned int cpu = smp_processor_id();
-        unsigned long pid = dids[cpu].pid;
-        int res = kvm_hypercall1(KVM_HC_UNMAP_PID, virt_to_phys((void *)pid));
+        bool ret;
+        unsigned int cpu;
+        unsigned long pid;
+        int res;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        res = kvm_hypercall1(KVM_HC_UNMAP_PID, virt_to_phys((void *)pid));
 
         if (res) {
                 dids[cpu].start = 0;
                 pr_info("cpu(%u): unmapping pid succeed\n", cpu);
+                ret = true;
         } else {
                 pr_alert("cpu(%u): unmapping pid fails: %d\n", cpu, res);
                 ret = false;
@@ -286,13 +308,18 @@ static bool hc_unmap_posted_interrupt_descriptor(void)
 
 static bool hc_page_walk(void)
 {
-        bool ret = true;
-        unsigned int cpu = smp_processor_id();
-        unsigned long pid = dids[cpu].pid;
-        int res = kvm_hypercall1(KVM_HC_PAGE_WALK, virt_to_phys((void *)pid));
+        bool ret;
+        unsigned int cpu;
+        unsigned long pid;
+        int res;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        res = kvm_hypercall1(KVM_HC_PAGE_WALK, virt_to_phys((void *)pid));
 
         if (res) {
                 pr_info("cpu(%u): page-walk succeed\n", cpu);
+                ret  = true;
         } else {
                 pr_alert("cpu(%u): page-walk fails: %d\n", cpu, res);
                 ret = false;
@@ -303,28 +330,38 @@ static bool hc_page_walk(void)
 
 static int set_clockevent_factor(unsigned long arg)
 {
-        int ret = 0;
+        int ret;
         clockevent_device_t data;
-        int cpu = smp_processor_id();
-        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
-        int is_bad = copy_from_user(&data, (clockevent_device_t *)arg,
-                                    sizeof(clockevent_device_t));
-        if (is_bad)
+        int cpu;
+        struct clock_event_device *evt;
+        int is_bad;
+
+        cpu = smp_processor_id();
+        evt = this_cpu_ptr(lapic_events);
+        is_bad = copy_from_user(&data, (clockevent_device_t *)arg,
+                                sizeof(clockevent_device_t));
+        if (is_bad) {
                 ret = -EACCES;
+        } else {
+                dids[cpu].mult = evt->mult;
+                dids[cpu].shift = evt->shift;
 
-        dids[cpu].mult = evt->mult;
-        dids[cpu].shift = evt->shift;
+                evt->mult = data.mult;
+                evt->shift = data.shift;
 
-        evt->mult = data.mult;
-        evt->shift = data.shift;
+                ret = 0;
+        }
 
         return ret;
 }
 
 static void restore_clockevent_factor(void)
 {
-        int cpu = smp_processor_id();
-        struct clock_event_device *evt = this_cpu_ptr(lapic_events);
+        int cpu;
+        struct clock_event_device *evt;
+
+        cpu = smp_processor_id();
+        evt = this_cpu_ptr(lapic_events);
 
         evt->mult = dids[cpu].mult;
         evt->shift = dids[cpu].shift;
@@ -409,7 +446,7 @@ static void did_send_IPI(int cpu, int vector)
         } else {
                 ipi->send_IPI(cpu, vector);
         }
-        print_ipi_dmesg(cpu, vector);
+        //print_ipi_dmesg(cpu, vector);
 }
 
 static void did_send_IPI_mask(const struct cpumask *mask, int vector)
@@ -544,12 +581,16 @@ static void set_x2apic_id(void)
 
         cpu = smp_processor_id();
         per_cpu(x86_cpu_to_apicid, cpu) = apicid;
-        pr_info("0x%x\n", per_cpu(x86_cpu_to_apicid, cpu));
+        pr_info("%s: 0x%x\n", __func__, per_cpu(x86_cpu_to_apicid, cpu));
 }
 
 static void restore_x2apic_id(void)
 {
-        set_x2apic_id();
+        int cpu;
+
+        cpu = smp_processor_id();
+        per_cpu(x86_cpu_to_apicid, cpu) = cpu;
+        pr_info("%s: 0x%x\n", __func__, per_cpu(x86_cpu_to_apicid, cpu));
 }
 
 static void set_x2apic_id2(unsigned long apicid)
@@ -558,23 +599,41 @@ static void set_x2apic_id2(unsigned long apicid)
 
         cpu = smp_processor_id();
         per_cpu(x86_cpu_to_apicid, cpu) = apicid;
-        pr_info("0x%x\n", per_cpu(x86_cpu_to_apicid, cpu));
+        pr_info("%s: 0x%x\n", __func__, per_cpu(x86_cpu_to_apicid, cpu));
+}
+
+static int send_ipi(unsigned long arg)
+{
+        int ret;
+        int is_bad;
+        ipi_t data;
+
+        is_bad = copy_from_user(&data, (ipi_t *)arg, sizeof(ipi_t));
+
+        if (is_bad) {
+                ret = -EACCES;
+        } else {
+                apic->send_IPI(data.cpu, data.vector);
+                pr_info("%d->%d: 0x%x\n", smp_processor_id(),
+                                          data.cpu, data.vector);
+                ret = 0;
+        }
+
+        return ret;
 }
 
 static void hc_set_x2apic_id(void)
 {
         kvm_hypercall0(KVM_HC_SET_X2APIC_ID);
-        pr_info("hypercall to set up x2apic id\n");
-
         set_x2apic_id();
+        pr_info("hypercall to set up x2apic id\n");
 }
 
 static void hc_restore_x2apic_id(void)
 {
         kvm_hypercall0(KVM_HC_RESTORE_X2APIC_ID);
-        pr_info("hypercall to set up x2apic id\n");
-
         restore_x2apic_id();
+        pr_info("hypercall to set up x2apic id\n");
 }
 
 static void hypercall_disable_intercept_wrmsr_icr(void)
@@ -625,7 +684,7 @@ out:
 
 static int hc_setup_dtid(unsigned long user_arg)
 {
-        int ret = 0;
+        int ret;
         unsigned long pid;
         unsigned int cpu;
         int offset;
@@ -653,7 +712,7 @@ static int hc_setup_dtid(unsigned long user_arg)
 
 static bool hc_restore_dtid(void)
 {
-        bool ret = true;
+        bool ret;
         unsigned int cpu;
         unsigned long pid;
         int res;
@@ -668,7 +727,9 @@ static bool hc_restore_dtid(void)
                 apic_write(APIC_TMICT, 0x616d);
 
                 dids[cpu].start = 0;
+
                 pr_info("cpu(%u): restoring dtid succeed\n", cpu);
+                ret = true;
         } else {
                 pr_alert("cpu(%u): restoring dtid fails: %d\n", cpu, res);
                 ret = false;
@@ -691,18 +752,6 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case PRINT_DID:
                 print_did();
                 break;
-        case HC_MAP_PID:
-                if (!hc_map_posted_interrupt_descriptor())
-                        ret = -EAGAIN;
-                break;
-        case HC_UNMAP_PID:
-                if (!hc_unmap_posted_interrupt_descriptor())
-                        ret = -EAGAIN;
-                break;
-        case HC_PAGE_WALK:
-                if (!hc_page_walk())
-                        ret = -EAGAIN;
-                break;
         case SET_CLOCKEVENT_FACTOR:
                 ret = set_clockevent_factor(arg);
                 break;
@@ -721,8 +770,26 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case SET_X2APIC_ID:
                 set_x2apic_id();
                 break;
+        case RESTORE_X2APIC_ID:
+                restore_x2apic_id();
+                break;
         case SET_X2APIC_ID2:
                 set_x2apic_id2(arg);
+                break;
+        case SEND_IPI:
+                send_ipi(arg);
+                break;
+        case HC_MAP_PID:
+                if (!hc_map_posted_interrupt_descriptor())
+                        ret = -EAGAIN;
+                break;
+        case HC_UNMAP_PID:
+                if (!hc_unmap_posted_interrupt_descriptor())
+                        ret = -EAGAIN;
+                break;
+        case HC_PAGE_WALK:
+                if (!hc_page_walk())
+                        ret = -EAGAIN;
                 break;
         case HC_SETUP_DTID:
                 ret = hc_setup_dtid(arg);
