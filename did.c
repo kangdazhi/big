@@ -333,9 +333,9 @@ static unsigned long hc_get_clockevent_factor(const char *query)
         unsigned long ret;
 
         if (strcmp(query, "mult") == 0)
-                ret = kvm_hypercall0(KVM_GET_CLOCKEVENT_MULT);
+                ret = kvm_hypercall0(KVM_HC_GET_CLOCKEVENT_MULT);
         else if (strcmp(query, "shift") == 0)
-                ret = kvm_hypercall0(KVM_GET_CLOCKEVENT_SHIFT);
+                ret = kvm_hypercall0(KVM_HC_GET_CLOCKEVENT_SHIFT);
         else
                 ret = 0;
 
@@ -370,29 +370,6 @@ static int set_clockevent_factor(void)
         }
 
         return ret;
-
-        //clockevent_device_t data;
-        //int cpu;
-        //struct clock_event_device *evt;
-        //int is_bad;
-
-        //cpu = smp_processor_id();
-        //evt = this_cpu_ptr(lapic_events);
-        //is_bad = copy_from_user(&data, (clockevent_device_t *)arg,
-        //                        sizeof(clockevent_device_t));
-        //if (is_bad) {
-        //        ret = -EACCES;
-        //} else {
-        //        dids[cpu].mult = evt->mult;
-        //        dids[cpu].shift = evt->shift;
-
-        //        evt->mult = data.mult;
-        //        evt->shift = data.shift;
-
-        //        ret = 0;
-        //}
-
-        //return ret;
 }
 
 static void restore_clockevent_factor(void)
@@ -778,6 +755,19 @@ static bool hc_restore_dtid(void)
         return ret;
 }
 
+/* vmcs */
+static void hc_set_cpu_exec_vmcs(void)
+{
+        kvm_hypercall0(KVM_HC_SET_CPU_EXEC_VMCS);
+        pr_info("hypercall to set the primary cpu execution vmcs\n");
+}
+
+static void hc_restore_cpu_exec_vmcs(void)
+{
+        kvm_hypercall0(KVM_HC_RESTORE_CPU_EXEC_VMCS);
+        pr_info("hypercall to restore the primary cpu execution vmcs\n");
+}
+
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
 {
         long ret = 0;
@@ -793,7 +783,6 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 print_did();
                 break;
         case SET_CLOCKEVENT_FACTOR:
-                //ret = set_clockevent_factor(arg);
                 ret = set_clockevent_factor();
                 break;
         case RESTORE_CLOCKEVENT_FACTOR:
@@ -820,6 +809,12 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case SEND_IPI:
                 send_ipi(arg);
                 break;
+        case HC_SET_CPU_EXEC_VMCS:
+                hc_set_cpu_exec_vmcs();
+                break;
+        case HC_RESTORE_CPU_EXEC_VMCS:
+                hc_restore_cpu_exec_vmcs();
+                break;
         case HC_GET_CLOCKEVENT_MULT:
                 hc_get_clockevent_factor("mult");
                 break;
@@ -839,7 +834,6 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                         ret = -EAGAIN;
                 break;
         case HC_SETUP_DTID:
-                //ret = hc_setup_dtid(arg);
                 ret = hc_setup_dtid();
                 break;
         case HC_RESTORE_DTID:

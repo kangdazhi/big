@@ -24,8 +24,10 @@ typedef struct clockevent_device_t {
 #define KVM_HC_RESTORE_X2APIC_ID                301
 #define KVM_HC_DISABLE_INTERCEPT_WRMSR_ICR      302
 #define KVM_HC_ENABLE_INTERCEPT_WRMSR_ICR       303
-#define KVM_GET_CLOCKEVENT_MULT         400
-#define KVM_GET_CLOCKEVENT_SHIFT        401
+#define KVM_HC_SET_CPU_EXEC_VMCS                304
+#define KVM_HC_RESTORE_CPU_EXEC_VMCS            305
+#define KVM_HC_GET_CLOCKEVENT_MULT         400
+#define KVM_HC_GET_CLOCKEVENT_SHIFT        401
 
 /* ioctl to hypercall */
 #define HC_MAP_PID                      _IO('k', 1000)
@@ -39,6 +41,8 @@ typedef struct clockevent_device_t {
 #define HC_ENABLE_INTERCEPT_WRMSR_ICR   _IO('k', 1008)
 #define HC_GET_CLOCKEVENT_MULT          _IO('k', 1009)
 #define HC_GET_CLOCKEVENT_SHIFT         _IO('k', 1010)
+#define HC_SET_CPU_EXEC_VMCS            _IO('k', 1011)
+#define HC_RESTORE_CPU_EXEC_VMCS        _IO('k', 1012)
 
 /* ioctl */
 #define SET_TIMER_EVENT_HANDLER         _IO('k', 2000)
