@@ -31,12 +31,14 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- get_x2apic_id\n");
                 fprintf(stderr, "- restore_x2apic_id\n");
                 fprintf(stderr, "- send_ipi <cpu> <vector>\n");
+                fprintf(stderr, "- hc_get_clockevent_mult\n");
+                fprintf(stderr, "- hc_get_clockevent_shift\n");
                 fprintf(stderr, "- hc_map_pid\n");
                 fprintf(stderr, "- hc_unmap_pid\n");
                 fprintf(stderr, "- hc_page_walk\n");
                 fprintf(stderr, "- hc_set_x2apic_id\n");
                 fprintf(stderr, "- hc_restore_x2apic_id\n");
-                fprintf(stderr, "- hc_setup_dtid <mult> <shift>\n");
+                fprintf(stderr, "- hc_setup_dtid\n");
                 fprintf(stderr, "- hc_restore_dtid\n");
                 fprintf(stderr, "- hc_disable_intercept_wrmsr_icr\n");
                 fprintf(stderr, "- enable_intercept_wrmsr_icr\n");
@@ -50,12 +52,12 @@ int main(int argc, char *argv[])
                 return -2;
         }
 
-        unsigned long *args = calloc(argc - 2, sizeof(unsigned long));
-        if (argc > 2) {
-                char *ptr;
-                for (int i = 2; i < argc; i++)
-                        args[i - 2] = strtoul(argv[i], &ptr, 10);
-        }
+        //unsigned long *args = calloc(argc - 2, sizeof(unsigned long));
+        //if (argc > 2) {
+        //        char *ptr;
+        //        for (int i = 2; i < argc; i++)
+        //                args[i - 2] = strtoul(argv[i], &ptr, 10);
+        //}
 
         if (strcmp(op, "set_event_handler") == 0) {
                 if (ioctl(fd, SET_TIMER_EVENT_HANDLER) < 0)
@@ -67,10 +69,10 @@ int main(int argc, char *argv[])
                 if (ioctl(fd, PRINT_DID) < 0)
                         goto error;
         } else if (strcmp(op, "set_clockevent_factor") == 0) {
-                clockevent_device_t data =
-                        (clockevent_device_t){"lapic", args[0], args[1]};
+                //clockevent_device_t data =
+                //        (clockevent_device_t){"lapic", args[0], args[1]};
 
-                if (ioctl(fd, SET_CLOCKEVENT_FACTOR, &data) < 0)
+                if (ioctl(fd, SET_CLOCKEVENT_FACTOR) < 0)
                         goto error;
         } else if (strcmp(op, "restore_clockevent_factor") == 0) {
                 if (ioctl(fd, RESTORE_CLOCKEVENT_FACTOR) < 0)
@@ -106,6 +108,12 @@ int main(int argc, char *argv[])
 
                 if (ioctl(fd, SEND_IPI, &ipi) < 0)
                         goto error;
+        } else if (strcmp(op, "hc_get_clockevent_mult") == 0) {
+                if (ioctl(fd, HC_GET_CLOCKEVENT_MULT) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_get_clockevent_shift") == 0) {
+                if (ioctl(fd, HC_GET_CLOCKEVENT_SHIFT) < 0)
+                        goto error;
         } else if (strcmp(op, "hc_map_pid") == 0) {
                 if (ioctl(fd, HC_MAP_PID) < 0)
                         goto error;
@@ -122,10 +130,10 @@ int main(int argc, char *argv[])
                 if (ioctl(fd, HC_RESTORE_X2APIC_ID) < 0)
                         goto error;
         } else if (strcmp(op, "hc_setup_dtid") == 0) {
-                clockevent_device_t data =
-                        (clockevent_device_t){"lapic", args[0], args[1]};
+                //clockevent_device_t data =
+                //        (clockevent_device_t){"lapic", args[0], args[1]};
 
-                if (ioctl(fd, HC_SETUP_DTID, &data) < 0)
+                if (ioctl(fd, HC_SETUP_DTID) < 0)
                         goto error;
         } else if (strcmp(op, "hc_restore_dtid") == 0) {
                 if (ioctl(fd, HC_RESTORE_DTID) < 0)
@@ -140,12 +148,12 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "No such option: %s\n", op);
         }
 
-        free(args);
+        //free(args);
         return 0;
 
 error:
         ret = -errno;
         perror("ioctl");
-        free(args);
+        //free(args);
         return ret;
 }

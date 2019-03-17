@@ -1,48 +1,66 @@
 #!/bin/bash
 
-if [ $# -lt 2 ]; then
-        echo "Usage: $0 <enable/disable> <ncpus> <kmult> <kshift>"
+if [ $# -ne 1 ]; then
+        echo "Usage: $0 <op>"
+        echo "- enable_did"
+        echo "- disable_did"
+        echo "- enable_dtid"
+        echo "- disable_dtid"
         exit 1
 fi
 op=$1
-ncpus=$2
-kmult=$3
-kshift=$4
 
 modprobe msr
 
-enable()
+enable_did()
 {
-        local cpus=$(($1 - 1))
-        local kmult=$2
-        local kshift=$3
+        local ncpus=$(nproc)
+        local cpus=$((ncpus - 1))
 
-        for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_setup_dtid $kmult $kshift; done
+        for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_setup_dtid; done
         ./run_did set_apic_ipi
         ./run_did hc_disable_intercept_wrmsr_icr
-        for i in `seq $cpus -1 0`; do taskset -c $i ./run_did set_x2apic_id; done 
-        for i in `seq 0 $cpus`; do taskset -c 0 ./run_did send_ipi $i 0xef; done 
+        for i in `seq $cpus -1 0`; do taskset -c $i ./run_did set_x2apic_id; done
+        for i in `seq 0 $cpus`; do taskset -c 0 ./run_did send_ipi $i 0xef; done
 }
 
-disable()
+disable_did()
 {
-        local cpus=$(($1 - 1))
+        local ncpus=$(nproc)
+        local cpus=$((ncpus - 1))
 
-        for i in `seq 0 $cpus`; do taskset -c $i ./run_did restore_x2apic_id; done 
+        for i in `seq 0 $cpus`; do taskset -c $i ./run_did restore_x2apic_id; done
         ./run_did hc_enable_intercept_wrmsr_icr
         ./run_did restore_apic_ipi
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_dtid; done
         for i in `seq 0 $cpus`; do wrmsr -p $i 0x838 0x616d; done
 }
 
-if [ $op = "enable" ]; then
-        enable $ncpus $kmult $kshift
-elif [ $op = "disable" ]; then
-        disable $ncpus
+enable_dtid()
+{
+        local ncpus=$(nproc)
+        local cpus=$((ncpus - 1))
+
+        for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_setup_dtid; done
+}
+
+disable_dtid()
+{
+        local ncpus=$(nproc)
+        local cpus=$((ncpus - 1))
+
+        for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_dtid; done
+        for i in `seq 0 $cpus`; do wrmsr -p $i 0x838 0x616d; done
+}
+
+if [ $op = "enable_did" ]; then
+        enable_did
+elif [ $op = "disable_did" ]; then
+        disable_did
+elif [ $op = "enable_dtid" ]; then
+        enable_dtid
+elif [ $op = "disable_dtid" ]; then
+        disable_dtid
 else
         echo "no such operation"
 fi
-
-# to be deleted
-#for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_set_x2apic_id; done 
-#for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_x2apic_id; done 

@@ -328,31 +328,71 @@ static bool hc_page_walk(void)
         return ret;
 }
 
-static int set_clockevent_factor(unsigned long arg)
+static unsigned long hc_get_clockevent_factor(const char *query)
+{
+        unsigned long ret;
+
+        if (strcmp(query, "mult") == 0)
+                ret = kvm_hypercall0(KVM_GET_CLOCKEVENT_MULT);
+        else if (strcmp(query, "shift") == 0)
+                ret = kvm_hypercall0(KVM_GET_CLOCKEVENT_SHIFT);
+        else
+                ret = 0;
+
+        return ret;
+}
+
+static int set_clockevent_factor(void)
 {
         int ret;
-        clockevent_device_t data;
-        int cpu;
-        struct clock_event_device *evt;
-        int is_bad;
+        u32 mult;
+        u32 shift;
 
-        cpu = smp_processor_id();
-        evt = this_cpu_ptr(lapic_events);
-        is_bad = copy_from_user(&data, (clockevent_device_t *)arg,
-                                sizeof(clockevent_device_t));
-        if (is_bad) {
-                ret = -EACCES;
-        } else {
+        mult = hc_get_clockevent_factor("mult");
+        shift = hc_get_clockevent_factor("shift");
+
+        if (mult > 0 && shift > 0) {
+                int cpu;
+                struct clock_event_device *evt;
+
+                cpu = smp_processor_id();
+                evt = this_cpu_ptr(lapic_events);
+
                 dids[cpu].mult = evt->mult;
                 dids[cpu].shift = evt->shift;
 
-                evt->mult = data.mult;
-                evt->shift = data.shift;
+                evt->mult = mult;
+                evt->shift = shift;
 
                 ret = 0;
+        } else {
+                ret = -EAGAIN;
         }
 
         return ret;
+
+        //clockevent_device_t data;
+        //int cpu;
+        //struct clock_event_device *evt;
+        //int is_bad;
+
+        //cpu = smp_processor_id();
+        //evt = this_cpu_ptr(lapic_events);
+        //is_bad = copy_from_user(&data, (clockevent_device_t *)arg,
+        //                        sizeof(clockevent_device_t));
+        //if (is_bad) {
+        //        ret = -EACCES;
+        //} else {
+        //        dids[cpu].mult = evt->mult;
+        //        dids[cpu].shift = evt->shift;
+
+        //        evt->mult = data.mult;
+        //        evt->shift = data.shift;
+
+        //        ret = 0;
+        //}
+
+        //return ret;
 }
 
 static void restore_clockevent_factor(void)
@@ -614,8 +654,8 @@ static int send_ipi(unsigned long arg)
                 ret = -EACCES;
         } else {
                 apic->send_IPI(data.cpu, data.vector);
-                pr_info("%d->%d: 0x%x\n", smp_processor_id(),
-                                          data.cpu, data.vector);
+                pr_info("%s: %d->%d: 0x%x\n", __func__, smp_processor_id(),
+                                              data.cpu, data.vector);
                 ret = 0;
         }
 
@@ -682,7 +722,7 @@ out:
         return NULL;
 }
 
-static int hc_setup_dtid(unsigned long user_arg)
+static int hc_setup_dtid(void)
 {
         int ret;
         unsigned long pid;
@@ -694,7 +734,7 @@ static int hc_setup_dtid(unsigned long user_arg)
         offset = kvm_hypercall1(KVM_HC_SETUP_DTID, virt_to_phys((void *)pid));
 
         if (offset >= 0) {
-                ret = set_clockevent_factor(user_arg);
+                ret = set_clockevent_factor();
                 set_timer_event_handler();
 
                 dids[cpu].start = (pid & ~0xFFF) | offset;
@@ -704,7 +744,7 @@ static int hc_setup_dtid(unsigned long user_arg)
                 pr_info("cpu(%u): setting up dtid succeed: 0x%x\n", cpu, offset);
         } else {
                 pr_alert("setting up dtid fails: %u\t%d\n", cpu, offset);
-                ret = -EPERM;
+                ret = -EAGAIN;
         }
 
         return ret;
@@ -753,7 +793,8 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 print_did();
                 break;
         case SET_CLOCKEVENT_FACTOR:
-                ret = set_clockevent_factor(arg);
+                //ret = set_clockevent_factor(arg);
+                ret = set_clockevent_factor();
                 break;
         case RESTORE_CLOCKEVENT_FACTOR:
                 restore_clockevent_factor();
@@ -779,6 +820,12 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case SEND_IPI:
                 send_ipi(arg);
                 break;
+        case HC_GET_CLOCKEVENT_MULT:
+                hc_get_clockevent_factor("mult");
+                break;
+        case HC_GET_CLOCKEVENT_SHIFT:
+                hc_get_clockevent_factor("shift");
+                break;
         case HC_MAP_PID:
                 if (!hc_map_posted_interrupt_descriptor())
                         ret = -EAGAIN;
@@ -792,7 +839,8 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                         ret = -EAGAIN;
                 break;
         case HC_SETUP_DTID:
-                ret = hc_setup_dtid(arg);
+                //ret = hc_setup_dtid(arg);
+                ret = hc_setup_dtid();
                 break;
         case HC_RESTORE_DTID:
                 if (!hc_restore_dtid())

@@ -24,23 +24,27 @@ typedef struct clockevent_device_t {
 #define KVM_HC_RESTORE_X2APIC_ID                301
 #define KVM_HC_DISABLE_INTERCEPT_WRMSR_ICR      302
 #define KVM_HC_ENABLE_INTERCEPT_WRMSR_ICR       303
+#define KVM_GET_CLOCKEVENT_MULT         400
+#define KVM_GET_CLOCKEVENT_SHIFT        401
 
 /* ioctl to hypercall */
 #define HC_MAP_PID                      _IO('k', 1000)
 #define HC_UNMAP_PID                    _IO('k', 1001)
 #define HC_PAGE_WALK                    _IO('k', 1002)
-#define HC_SETUP_DTID                   _IOW('k', 1003, clockevent_device_t *)
+#define HC_SETUP_DTID                   _IO('k', 1003)
 #define HC_RESTORE_DTID                 _IO('k', 1004)
 #define HC_SET_X2APIC_ID                _IO('k', 1005)
 #define HC_RESTORE_X2APIC_ID            _IO('k', 1006)
 #define HC_DISABLE_INTERCEPT_WRMSR_ICR  _IO('k', 1007)
 #define HC_ENABLE_INTERCEPT_WRMSR_ICR   _IO('k', 1008)
+#define HC_GET_CLOCKEVENT_MULT          _IO('k', 1009)
+#define HC_GET_CLOCKEVENT_SHIFT         _IO('k', 1010)
 
 /* ioctl */
 #define SET_TIMER_EVENT_HANDLER         _IO('k', 2000)
 #define RESTORE_TIMER_EVENT_HANDLER     _IO('k', 2001)
 #define PRINT_DID                       _IO('k', 2002)
-#define SET_CLOCKEVENT_FACTOR           _IOW('k', 2003, clockevent_device_t *)
+#define SET_CLOCKEVENT_FACTOR           _IO('k', 2003)
 #define RESTORE_CLOCKEVENT_FACTOR       _IO('k', 2004)
 
 /* ipi */
