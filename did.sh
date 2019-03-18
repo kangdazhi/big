@@ -14,7 +14,7 @@ modprobe msr
 
 enable_did()
 {
-        local ncpus=$(nproc)
+        local ncpus=$(nproc --all)
         local cpus=$((ncpus - 1))
 
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_setup_dtid; done
@@ -26,7 +26,7 @@ enable_did()
 
 disable_did()
 {
-        local ncpus=$(nproc)
+        local ncpus=$(nproc --all)
         local cpus=$((ncpus - 1))
 
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did restore_x2apic_id; done
@@ -38,7 +38,7 @@ disable_did()
 
 enable_dtid()
 {
-        local ncpus=$(nproc)
+        local ncpus=$(nproc --all)
         local cpus=$((ncpus - 1))
 
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_setup_dtid; done
@@ -47,7 +47,7 @@ enable_dtid()
 
 disable_dtid()
 {
-        local ncpus=$(nproc)
+        local ncpus=$(nproc --all)
         local cpus=$((ncpus - 1))
 
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_dtid; done
