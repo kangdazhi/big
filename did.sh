@@ -22,6 +22,7 @@ enable_did()
         ./run_did hc_disable_intercept_wrmsr_icr
         for i in `seq $cpus -1 0`; do taskset -c $i ./run_did set_x2apic_id; done
         for i in `seq 0 $cpus`; do taskset -c 0 ./run_did send_ipi $i 0xef; done
+        for i in `seq 0 $cpus`; do taskset -c 0 ./run_did send_ipi $i 0xef; done
 }
 
 disable_did()
