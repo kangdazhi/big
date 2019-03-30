@@ -168,6 +168,7 @@ static void deallocate(void)
 }
 
 /*
+ * posted-interrupts
  * test_and_set_bit uses the LOCK prefix. It achieve the
  * atomicity by locking the cache line to the shared memory.
  * This ensures the processor has the exclusive ownership of
@@ -180,15 +181,14 @@ static void deallocate(void)
  * timer-interrupt bit.
  */
 //#define PI_ON 0x100   /* ON bit is at 256 */
-static void set_posted_interrupt(u32 vector, unsigned long *pid)
+static void pi_set(u32 vector, unsigned long *pid)
 {
         __set_bit(vector, pid);
 }
 
 static void pi_set_timer_interrupt(unsigned long *pid)
 {
-        //__set_bit(PI_ON, pid);
-        set_posted_interrupt(LOCAL_TIMER_VECTOR, pid);
+        pi_set(LOCAL_TIMER_VECTOR, pid);
 }
 
 /*
@@ -445,10 +445,7 @@ static __always_inline void rare_write_end(void)
 /* IPI */
 void print_ipi_dmesg(int cpu, int vector)
 {
-        int scpu;
-
-        scpu = smp_processor_id();
-        trace_printk("%d->%d: 0x%x\n", scpu, cpu, vector);
+        trace_printk("%d->%d: 0x%x\n", smp_processor_id(), cpu, vector);
 }
 
 static void did_send_IPI(int cpu, int vector)
@@ -457,7 +454,7 @@ static void did_send_IPI(int cpu, int vector)
                 unsigned long *pid;
 
                 pid = (unsigned long *)dids[cpu].start;
-                set_posted_interrupt(vector, pid);
+                pi_set(vector, pid);
 
                 ipi->send_IPI(cpu, POSTED_INTR_VECTOR);
         } else {
@@ -474,7 +471,7 @@ static void did_send_IPI_mask(const struct cpumask *mask, int vector)
 
                 for_each_cpu(cpu, mask) {
                         pid = (unsigned long *)dids[cpu].start;
-                        set_posted_interrupt(vector, pid);
+                        pi_set(vector, pid);
                 }
 
                 ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
@@ -496,7 +493,7 @@ static void did_send_IPI_mask_allbutself(const struct cpumask *mask, int vector)
                                 continue;
 
                         pid = (unsigned long *)dids[query_cpu].start;
-                        set_posted_interrupt(vector, pid);
+                        pi_set(vector, pid);
                 }
 
                 ipi->send_IPI_mask(mask, POSTED_INTR_VECTOR);
@@ -524,7 +521,7 @@ static void did_send_IPI_self(int vector)
                 cpu = smp_processor_id();
                 pid = (unsigned long *)dids[cpu].start;
 
-                set_posted_interrupt(vector, pid);
+                pi_set(vector, pid);
 
                 ipi->send_IPI_self(POSTED_INTR_VECTOR);
         } else {
