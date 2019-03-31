@@ -183,7 +183,8 @@ static void deallocate(void)
 //#define PI_ON 0x100   /* ON bit is at 256 */
 static void pi_set(u32 vector, unsigned long *pid)
 {
-        __set_bit(vector, pid);
+        test_and_set_bit(vector, pid);
+        //__set_bit(vector, pid);
 }
 
 static void pi_set_timer_interrupt(unsigned long *pid)
@@ -198,7 +199,6 @@ static void pi_set_timer_interrupt(unsigned long *pid)
  */
 static bool bypass_early_timer_interrupt(int cpu, ktime_t next_event)
 {
-        ktime_t now;
         bool ret;
         bool mapped;
 
@@ -206,9 +206,14 @@ static bool bypass_early_timer_interrupt(int cpu, ktime_t next_event)
         mapped = dids && dids[cpu].start;
 
         if (mapped) {
-                pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
+                ktime_t now;
+                unsigned long *pid;
 
+                pid = (unsigned long *)dids[cpu].start;
                 now = ktime_get();
+
+                pi_set_timer_interrupt(pid);
+
                 if (now < next_event)
                         ret = true;
         }
@@ -221,9 +226,21 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
         void (*event_handler)(struct clock_event_device *);
         int cpu;
         struct clock_event_device *evt;
+        //bool bypass;
+        //ktime_t duration;
 
         cpu = smp_processor_id();
         evt = this_cpu_ptr(lapic_events);
+
+        //duration = ktime_get();
+        //bypass = bypass_early_timer_interrupt(cpu, evt->next_event);
+        //duration = ktime_get() - duration;
+
+        //if (cpu == 1)
+        //        trace_printk("bypass: %llu\n", duration);
+
+        //if(bypass)
+        //        return;
 
         if (bypass_early_timer_interrupt(cpu, evt->next_event))
                 return;
