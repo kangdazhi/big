@@ -903,6 +903,9 @@ static struct miscdevice misc_device = {
         .fops = &misc_device_operations
 };
 
+extern int bonding_init(void);
+extern int bonding_exit(void);
+
 static int __init my_init(void)
 {
         int ret = misc_register(&misc_device);
@@ -915,6 +918,7 @@ static int __init my_init(void)
 
                 allocate();
                 touch_page();
+                bonding_init();
 
                 pr_info("Register %s\n", DEVICE);
 
@@ -927,6 +931,7 @@ static int __init my_init(void)
 
 static void __exit my_exit(void)
 {
+        bonding_exit();
         deallocate();
         misc_deregister(&misc_device);
         pr_info("Bye %s\n", DEVICE);

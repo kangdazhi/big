@@ -4736,6 +4736,8 @@ static struct pernet_operations bond_net_ops = {
 	.size = sizeof(struct bond_net),
 };
 
+/* OSNET */
+#if 0
 static int __init bonding_init(void)
 {
 	int i;
@@ -4789,9 +4791,67 @@ static void __exit bonding_exit(void)
 	WARN_ON(atomic_read(&netpoll_block_tx));
 #endif
 }
+#endif
+/* OSNET-END */
 
-module_init(bonding_init);
-module_exit(bonding_exit);
+int __init bonding_init(void)
+{
+	int i;
+	int res;
+
+	pr_info("%s", bond_version);
+
+	res = bond_check_params(&bonding_defaults);
+	if (res)
+		goto out;
+
+	res = register_pernet_subsys(&bond_net_ops);
+	if (res)
+		goto out;
+
+	res = bond_netlink_init();
+	if (res)
+		goto err_link;
+
+	bond_create_debugfs();
+
+	for (i = 0; i < max_bonds; i++) {
+		res = bond_create(&init_net, NULL);
+		if (res)
+			goto err;
+	}
+
+	register_netdevice_notifier(&bond_netdev_notifier);
+out:
+	return res;
+err:
+	bond_destroy_debugfs();
+	bond_netlink_fini();
+err_link:
+	unregister_pernet_subsys(&bond_net_ops);
+	goto out;
+
+}
+EXPORT_SYMBOL_GPL(bonding_init);
+
+void __exit bonding_exit(void)
+{
+	unregister_netdevice_notifier(&bond_netdev_notifier);
+
+	bond_destroy_debugfs();
+
+	bond_netlink_fini();
+	unregister_pernet_subsys(&bond_net_ops);
+
+#ifdef CONFIG_NET_POLL_CONTROLLER
+	/* Make sure we don't have an imbalance on our netpoll blocking */
+	WARN_ON(atomic_read(&netpoll_block_tx));
+#endif
+}
+EXPORT_SYMBOL_GPL(bonding_exit);
+
+//module_init(bonding_init);
+//module_exit(bonding_exit);
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 MODULE_DESCRIPTION(DRV_DESCRIPTION ", v" DRV_VERSION);
