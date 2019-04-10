@@ -82,7 +82,7 @@
 #include <net/bond_3ad.h>
 #include <net/bond_alb.h>
 
-#include "include/bonding_priv.h"
+#include "bonding_priv.h"
 
 /*---------------------------- Module parameters ----------------------------*/
 

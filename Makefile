@@ -1,6 +1,9 @@
 # Compile all modules.
 
-obj-m += did/ bonding-driver/
+did-obj := did/
+bond-obj := bonding-driver/
+
+obj-m := $(did-obj) $(bond-obj)
 
 ccflags-y := -std=gnu99 -Wno-declaration-after-statement
 
