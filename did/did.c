@@ -210,9 +210,9 @@ static bool bypass_early_timer_interrupt(int cpu, ktime_t next_event)
                 unsigned long *pid;
 
                 pid = (unsigned long *)dids[cpu].start;
-                now = ktime_get();
-
                 pi_set_timer_interrupt(pid);
+
+                now = ktime_get();
 
                 if (now < next_event)
                         ret = true;
@@ -226,21 +226,9 @@ static void timer_interrupt_handler(struct clock_event_device *dev)
         void (*event_handler)(struct clock_event_device *);
         int cpu;
         struct clock_event_device *evt;
-        //bool bypass;
-        //ktime_t duration;
 
         cpu = smp_processor_id();
         evt = this_cpu_ptr(lapic_events);
-
-        //duration = ktime_get();
-        //bypass = bypass_early_timer_interrupt(cpu, evt->next_event);
-        //duration = ktime_get() - duration;
-
-        //if (cpu == 1)
-        //        trace_printk("bypass: %llu\n", duration);
-
-        //if(bypass)
-        //        return;
 
         if (bypass_early_timer_interrupt(cpu, evt->next_event))
                 return;
