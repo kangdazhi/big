@@ -11756,7 +11756,9 @@ static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
         .get_cpu_exec_ctrl = osnet_get_vmx_cpu_exec_ctrl,
         .get_secondary_exec_ctrl = osnet_get_vmx_secondary_exec_ctrl,
         .vmcs_read32 = vmcs_read32,
+        .vmcs_read64 = vmcs_read64,
         .vmcs_write32 = vmcs_write32,
+        .vmcs_write64 = vmcs_write64,
         .dump_vmcs = dump_vmcs,
 #endif
 

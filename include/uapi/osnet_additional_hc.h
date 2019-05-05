@@ -48,6 +48,7 @@
 #define KVM_HC_ENABLE_INTERCEPT_WRMSR_ICR       303
 #define KVM_HC_SET_CPU_EXEC_VMCS                304
 #define KVM_HC_RESTORE_CPU_EXEC_VMCS            305
+#define KVM_HC_DUMP_VMCS                        306
 #define KVM_HC_GET_CLOCKEVENT_MULT         400
 #define KVM_HC_GET_CLOCKEVENT_SHIFT        401
 

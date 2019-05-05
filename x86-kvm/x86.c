@@ -6569,6 +6569,25 @@ static void osnet_set_cpu_exec_ctrl(struct kvm_vcpu *vcpu, bool enable)
         kvm_x86_ops->vmcs_write32(CPU_BASED_VM_EXEC_CONTROL, cpu_exec_ctrl);
 }
 
+static void osnet_dump_vmcs(void)
+{
+        u64 io_bitmap_a;
+        u64 io_bitmap_a_high;
+        u64 io_bitmap_b;
+        u64 io_bitmap_b_high;
+
+        io_bitmap_a = kvm_x86_ops->vmcs_read64(IO_BITMAP_A);
+        io_bitmap_a_high = kvm_x86_ops->vmcs_read64(IO_BITMAP_A_HIGH);
+        io_bitmap_b = kvm_x86_ops->vmcs_read64(IO_BITMAP_B);
+        io_bitmap_b_high = kvm_x86_ops->vmcs_read64(IO_BITMAP_B_HIGH);
+
+        kvm_x86_ops->dump_vmcs();
+        pr_err("0x%016llx\n", io_bitmap_a);
+        pr_err("0x%016llx\n", io_bitmap_a_high);
+        pr_err("0x%016llx\n", io_bitmap_b);
+        pr_err("0x%016llx\n", io_bitmap_b_high);
+}
+
 static void osnet_set_timer_msr_bitmap(struct kvm_vcpu *vcpu, bool enable)
 {
         u32 msr;
@@ -6758,6 +6777,10 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
                 break;
         case KVM_HC_RESTORE_CPU_EXEC_VMCS:
                 osnet_set_cpu_exec_ctrl(vcpu, true);
+                ret = 0;
+                break;
+        case KVM_HC_DUMP_VMCS:
+                osnet_dump_vmcs();
                 ret = 0;
                 break;
 #endif

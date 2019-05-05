@@ -1044,7 +1044,9 @@ struct kvm_x86_ops {
         u32 (*get_cpu_exec_ctrl)(struct kvm_vcpu *vcpu);
         u32 (*get_secondary_exec_ctrl)(struct kvm_vcpu *vcpu);
         u32 (*vmcs_read32)(unsigned long field);
+        u64 (*vmcs_read64)(unsigned long field);
         void (*vmcs_write32)(unsigned long field, u32 value);
+        void (*vmcs_write64)(unsigned long field, u64 value);
         void (*dump_vmcs)(void);
 #endif
 
