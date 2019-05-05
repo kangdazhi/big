@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- send_ipi <cpu> <vector>\n");
                 fprintf(stderr, "- hc_set_cpu_exec_vmcs\n");
                 fprintf(stderr, "- hc_restore_cpu_exec_vmcs\n");
+                fprintf(stderr, "- hc_dump_vmcs\n");
                 fprintf(stderr, "- hc_get_clockevent_mult\n");
                 fprintf(stderr, "- hc_get_clockevent_shift\n");
                 fprintf(stderr, "- hc_map_pid\n");
@@ -115,6 +116,9 @@ int main(int argc, char *argv[])
                         goto error;
         } else if (strcmp(op, "hc_restore_cpu_exec_vmcs") == 0) {
                 if (ioctl(fd, HC_RESTORE_CPU_EXEC_VMCS) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_dump_vmcs") == 0) {
+                if (ioctl(fd, HC_DUMP_VMCS) < 0)
                         goto error;
         } else if (strcmp(op, "hc_get_clockevent_mult") == 0) {
                 if (ioctl(fd, HC_GET_CLOCKEVENT_MULT) < 0)
