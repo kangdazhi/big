@@ -6582,10 +6582,10 @@ static void osnet_dump_vmcs(void)
         io_bitmap_b_high = kvm_x86_ops->vmcs_read64(IO_BITMAP_B_HIGH);
 
         kvm_x86_ops->dump_vmcs();
-        pr_err("0x%016llx\n", io_bitmap_a);
-        pr_err("0x%016llx\n", io_bitmap_a_high);
-        pr_err("0x%016llx\n", io_bitmap_b);
-        pr_err("0x%016llx\n", io_bitmap_b_high);
+        pr_err("io bitmap a: 0x%016llx\n", io_bitmap_a);
+        pr_err("io bitmap a high: 0x%016llx\n", io_bitmap_a_high);
+        pr_err("io bitmap b: 0x%016llx\n", io_bitmap_b);
+        pr_err("io bitmap b high: 0x%016llx\n", io_bitmap_b_high);
 }
 
 static void osnet_set_timer_msr_bitmap(struct kvm_vcpu *vcpu, bool enable)
