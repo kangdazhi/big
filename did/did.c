@@ -761,19 +761,37 @@ static bool hc_restore_dtid(void)
 static void hc_set_cpu_exec_vmcs(void)
 {
         kvm_hypercall0(KVM_HC_SET_CPU_EXEC_VMCS);
-        pr_info("hypercall to set the primary cpu execution vmcs\n");
+        pr_info("hypercall to set the primary cpu exec vmcs\n");
 }
 
 static void hc_restore_cpu_exec_vmcs(void)
 {
         kvm_hypercall0(KVM_HC_RESTORE_CPU_EXEC_VMCS);
-        pr_info("hypercall to restore the primary cpu execution vmcs\n");
+        pr_info("hypercall to restore the primary cpu exec vmcs\n");
 }
 
 static void hc_dump_vmcs(void)
 {
         kvm_hypercall0(KVM_HC_DUMP_VMCS);
         pr_info("hypercall to dump the vmcs\n");
+}
+
+static void hc_set_pin_based_exec_vmcs(void)
+{
+        kvm_hypercall0(KVM_HC_SET_PIN_BASED_EXEC_VMCS);
+        pr_info("hypercall to set the pin-based exec vmcs\n");
+}
+
+static void hc_set_secondary_exec_vmcs(void)
+{
+        kvm_hypercall0(KVM_HC_SET_SECONDARY_EXEC_VMCS);
+        pr_info("hypercall to set the secondary cpu exec vmcs\n");
+}
+
+static void hc_set_exception_bitmap(void)
+{
+        kvm_hypercall0(KVM_HC_SET_EXCEPTION_BITMAP);
+        pr_info("hypercall to set the exception bitmap\n");
 }
 
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
@@ -825,6 +843,15 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 break;
         case HC_DUMP_VMCS:
                 hc_dump_vmcs();
+                break;
+        case HC_SET_PIN_BASED_EXEC_VMCS:
+                hc_set_pin_based_exec_vmcs();
+                break;
+        case HC_SET_SECONDARY_EXEC_VMCS:
+                hc_set_secondary_exec_vmcs();
+                break;
+        case HC_SET_EXCEPTION_BITMAP:
+                hc_set_exception_bitmap();
                 break;
         case HC_GET_CLOCKEVENT_MULT:
                 hc_get_clockevent_factor("mult");

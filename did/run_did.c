@@ -33,6 +33,9 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- send_ipi <cpu> <vector>\n");
                 fprintf(stderr, "- hc_set_cpu_exec_vmcs\n");
                 fprintf(stderr, "- hc_restore_cpu_exec_vmcs\n");
+                fprintf(stderr, "- hc_set_pin_based_exec_vmcs\n");
+                fprintf(stderr, "- hc_set_seconsary_exec_vmcs\n");
+                fprintf(stderr, "- hc_set_exception_bitmap\n");
                 fprintf(stderr, "- hc_dump_vmcs\n");
                 fprintf(stderr, "- hc_get_clockevent_mult\n");
                 fprintf(stderr, "- hc_get_clockevent_shift\n");
@@ -119,6 +122,15 @@ int main(int argc, char *argv[])
                         goto error;
         } else if (strcmp(op, "hc_dump_vmcs") == 0) {
                 if (ioctl(fd, HC_DUMP_VMCS) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_set_pin_based_exec_vmcs") == 0) {
+                if (ioctl(fd, HC_SET_PIN_BASED_EXEC_VMCS) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_set_secondary_exec_vmcs") == 0) {
+                if (ioctl(fd, HC_SET_SECONDARY_EXEC_VMCS) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_set_exception_bitmap") == 0) {
+                if (ioctl(fd, HC_SET_EXCEPTION_BITMAP) < 0)
                         goto error;
         } else if (strcmp(op, "hc_get_clockevent_mult") == 0) {
                 if (ioctl(fd, HC_GET_CLOCKEVENT_MULT) < 0)
