@@ -6556,17 +6556,102 @@ static void osnet_restore_x2apic_id(struct kvm_vcpu *vcpu)
 #define OSNET_MSR_TYPE_R 1
 #define OSNET_MSR_TYPE_W 2
 
+static void osnet_set_pin_based_exec_ctrl(struct kvm_vcpu *vcpu)
+{
+        u32 ctrl;
+
+        /*
+         * min = PIN_BASED_EXT_INTR_MASK | PIN_BASED_NMI_EXITING;
+         * opt = PIN_BASED_VIRTUAL_NMIS  | PIN_BASED_POSTED_INTR |
+         *       PIN_BASED_VMX_PREEMPTION_TIMER;
+         *
+         * PIN_BASED_VMX_PREEMPTION_TIMER is disabled by the
+         * kvm-intel module parameter. If the “NMI exiting”
+         * VM-execution control is 0, the “virtual NMIs”
+         * VM-execution control must be 0.
+         */
+
+        ctrl = kvm_x86_ops->get_pin_based_exec_ctrl(vcpu);
+        ctrl &= ~(PIN_BASED_NMI_EXITING | PIN_BASED_VIRTUAL_NMIS);
+
+        kvm_x86_ops->vmcs_write32(PIN_BASED_VM_EXEC_CONTROL, ctrl);
+}
+
 static void osnet_set_cpu_exec_ctrl(struct kvm_vcpu *vcpu, bool enable)
 {
-        u32 cpu_exec_ctrl = kvm_x86_ops->get_cpu_exec_ctrl(vcpu);
+        u32 ctrl;
+
+        /* min = CPU_BASED_HLT_EXITING |
+         *       CPU_BASED_CR8_LOAD_EXITING |
+         *       CPU_BASED_CR8_STORE_EXITING |
+         *       CPU_BASED_CR3_LOAD_EXITING |
+         *       CPU_BASED_CR3_STORE_EXITING |
+         *       CPU_BASED_USE_IO_BITMAPS |
+         *       CPU_BASED_MOV_DR_EXITING |
+         *       CPU_BASED_USE_TSC_OFFSETING |
+         *       CPU_BASED_MWAIT_EXITING |
+         *       CPU_BASED_MONITOR_EXITING  |
+         *       CPU_BASED_INVLPG_EXITING |
+         *       CPU_BASED_RDPMC_EXITING;
+         *
+         * opt = CPU_BASED_TPR_SHADOW |
+         *       CPU_BASED_USE_MSR_BITMAPS |
+         *       CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
+         */
+
+        ctrl = kvm_x86_ops->get_cpu_exec_ctrl(vcpu);
 
         if (enable) {
-                cpu_exec_ctrl |= CPU_BASED_HLT_EXITING;
+                //ctrl |= CPU_BASED_HLT_EXITING;
+                ctrl |= (CPU_BASED_HLT_EXITING | CPU_BASED_MWAIT_EXITING |
+                         CPU_BASED_RDPMC_EXITING | CPU_BASED_MOV_DR_EXITING |
+                         CPU_BASED_MONITOR_EXITING | CPU_BASED_PAUSE_EXITING);
         } else {
-                cpu_exec_ctrl &= ~CPU_BASED_HLT_EXITING;
+                //ctrl &= ~CPU_BASED_HLT_EXITING;
+                ctrl &= ~(CPU_BASED_HLT_EXITING | CPU_BASED_MWAIT_EXITING |
+                          CPU_BASED_RDPMC_EXITING | CPU_BASED_MOV_DR_EXITING |
+                          CPU_BASED_MONITOR_EXITING | CPU_BASED_PAUSE_EXITING);
         }
 
-        kvm_x86_ops->vmcs_write32(CPU_BASED_VM_EXEC_CONTROL, cpu_exec_ctrl);
+        kvm_x86_ops->vmcs_write32(CPU_BASED_VM_EXEC_CONTROL, ctrl);
+}
+
+static void osnet_set_secondary_exec_ctrl(struct kvm_vcpu *vcpu)
+{
+        u32 ctrl;
+
+        /*
+         * min2 = 0;
+         * opt2 = SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES |
+         *        SECONDARY_EXEC_VIRTUALIZE_X2APIC_MODE |
+         *        SECONDARY_EXEC_WBINVD_EXITING |
+         *        SECONDARY_EXEC_ENABLE_VPID |
+         *        SECONDARY_EXEC_ENABLE_EPT |
+         *        SECONDARY_EXEC_UNRESTRICTED_GUEST |
+         *        SECONDARY_EXEC_PAUSE_LOOP_EXITING |
+         *        SECONDARY_EXEC_RDTSCP |
+         *        SECONDARY_EXEC_ENABLE_INVPCID |
+         *        SECONDARY_EXEC_APIC_REGISTER_VIRT |
+         *        SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY |
+         *        SECONDARY_EXEC_SHADOW_VMCS |
+         *        SECONDARY_EXEC_XSAVES  |
+         *        SECONDARY_EXEC_ENABLE_PML |
+         *        SECONDARY_EXEC_TSC_SCALING;
+         */
+
+        ctrl = kvm_x86_ops->get_secondary_exec_ctrl(vcpu);
+
+        kvm_x86_ops->vmcs_write32(SECONDARY_VM_EXEC_CONTROL, ctrl);
+}
+
+static void osnet_set_exception_bitmap(struct kvm_vcpu *vcpu)
+{
+        u32 bitmap;
+
+        bitmap = kvm_x86_ops->vmcs_read32(EXCEPTION_BITMAP);
+        bitmap = 0x0;
+
+        kvm_x86_ops->vmcs_write32(EXCEPTION_BITMAP, bitmap);
 }
 
 static void osnet_dump_vmcs(void)
@@ -6777,6 +6862,18 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
                 break;
         case KVM_HC_RESTORE_CPU_EXEC_VMCS:
                 osnet_set_cpu_exec_ctrl(vcpu, true);
+                ret = 0;
+                break;
+        case KVM_HC_SET_PIN_BASED_EXEC_VMCS:
+                osnet_set_pin_based_exec_ctrl(vcpu);
+                ret = 0;
+                break;
+        case KVM_HC_SET_SECONDARY_EXEC_VMCS:
+                osnet_set_secondary_exec_ctrl(vcpu);
+                ret = 0;
+                break;
+        case KVM_HC_SET_EXCEPTION_BITMAP:
+                osnet_set_exception_bitmap(vcpu);
                 ret = 0;
                 break;
         case KVM_HC_DUMP_VMCS:

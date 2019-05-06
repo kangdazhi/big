@@ -29,8 +29,8 @@ modules:
 
 insert:
 	insmod irqbypass.ko
-	insmod kvm.ko halt_poll_ns=0
-	insmod kvm-intel.ko preemption_timer=0
+	insmod kvm.ko #halt_poll_ns=0
+	insmod kvm-intel.ko #ple_gap=0 osnet_enable_wbinvd=0 preemption_timer=0
 
 remove:
 	rmmod kvm-intel.ko

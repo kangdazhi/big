@@ -56,6 +56,11 @@
 /* OSNET */
 //#include <asm/osnet.h>
 #include "../include/asm/osnet.h"
+
+#if OSNET_CONFIGURE_VMCS 
+static bool __read_mostly osnet_enable_wbinvd = 1;
+module_param_named(osnet_enable_wbinvd, osnet_enable_wbinvd, bool, 0444);
+#endif
 /* OSNET-END */
 
 #define __ex(x) __kvm_handle_fault_on_reboot(x)
@@ -3651,6 +3656,10 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 			SECONDARY_EXEC_XSAVES |
 			SECONDARY_EXEC_ENABLE_PML |
 			SECONDARY_EXEC_TSC_SCALING;
+
+                if (!osnet_enable_wbinvd)
+                        opt2 &= ~SECONDARY_EXEC_WBINVD_EXITING;
+
 		if (adjust_vmx_controls(min2, opt2,
 					MSR_IA32_VMX_PROCBASED_CTLS2,
 					&_cpu_based_2nd_exec_control) < 0)
