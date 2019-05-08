@@ -448,10 +448,10 @@ static __always_inline void rare_write_end(void)
 }
 
 /* IPI */
-void print_ipi_dmesg(int cpu, int vector)
-{
-        trace_printk("%d->%d: 0x%x\n", smp_processor_id(), cpu, vector);
-}
+//void print_ipi_dmesg(int cpu, int vector)
+//{
+//        trace_printk("%d->%d: 0x%x\n", smp_processor_id(), cpu, vector);
+//}
 
 static void did_send_IPI(int cpu, int vector)
 {
