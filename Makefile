@@ -12,7 +12,7 @@ kvm-y += $(X86-KVM)/x86.o $(X86-KVM)/mmu.o $(X86-KVM)/emulate.o \
          $(X86-KVM)/i8254.o $(X86-KVM)/ioapic.o $(X86-KVM)/irq_comm.o \
          $(X86-KVM)/cpuid.o $(X86-KVM)/pmu.o $(X86-KVM)/mtrr.o \
          $(X86-KVM)/hyperv.o $(X86-KVM)/page_track.o $(X86-KVM)/debugfs.o
-kvm-$(CONFIG_KVM_DEVICE_ASSIGNMENT) += assigned-dev.o iommu.o
+kvm-$(CONFIG_KVM_DEVICE_ASSIGNMENT) += $(X86-KVM)/assigned-dev.o $(X86-KVM)/iommu.o
 kvm-intel-y += $(X86-KVM)/vmx.o $(X86-KVM)/pmu_intel.o
 irqbypass-y += $(VIRT-KVM-LIB)/irqbypass.o
 
