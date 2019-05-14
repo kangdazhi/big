@@ -9173,6 +9173,10 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 #endif
 	      );
 
+        /* OSNET */
+        trace_printk("%u\n", vmx->exit_reason);
+        /* OSNET-END */
+
 	/* MSR_IA32_DEBUGCTLMSR is zeroed on vmexit. Restore it if needed */
 	if (debugctlmsr)
 		update_debugctlmsr(debugctlmsr);
