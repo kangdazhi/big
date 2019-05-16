@@ -9021,6 +9021,11 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	unsigned long debugctlmsr, cr4;
 
+        /* OSNET */
+        u64 info1;
+        u64 info2;
+        /* OSNET-END */
+
 	/* Record the guest's net vcpu time for enforced NMI injections. */
 	if (unlikely(!cpu_has_virtual_nmis() && vmx->soft_vnmi_blocked))
 		vmx->entry_time = ktime_get();
@@ -9173,10 +9178,6 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 #endif
 	      );
 
-        /* OSNET */
-        trace_printk("%u\n", vmx->exit_reason);
-        /* OSNET-END */
-
 	/* MSR_IA32_DEBUGCTLMSR is zeroed on vmexit. Restore it if needed */
 	if (debugctlmsr)
 		update_debugctlmsr(debugctlmsr);
@@ -9206,6 +9207,12 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 	vmx->loaded_vmcs->launched = 1;
 
 	vmx->exit_reason = vmcs_read32(VM_EXIT_REASON);
+
+        /* OSNET */
+        vmx_get_exit_info(vcpu, &info1, &info2);
+        trace_printk("%u\t0x%08llx\t0x%08llx\n", vmx->exit_reason, info1,
+                                                 info2);
+        /* OSNET-END */
 
 	/*
 	 * eager fpu is enabled if PKEY is supported and CR4 is switched
