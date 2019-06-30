@@ -324,6 +324,7 @@ static bool hc_page_walk(void)
 
         if (res) {
                 pr_info("cpu(%u): page-walk succeed\n", cpu);
+                pr_info("cpu(%u): 0x%llx\n", cpu, virt_to_phys((void *)pid));
                 ret  = true;
         } else {
                 pr_alert("cpu(%u): page-walk fails: %d\n", cpu, res);
@@ -655,13 +656,13 @@ static void hc_restore_x2apic_id(void)
         pr_info("hypercall to set up x2apic id\n");
 }
 
-static void hypercall_disable_intercept_wrmsr_icr(void)
+static void hc_disable_intercept_wrmsr_icr(void)
 {
         kvm_hypercall0(KVM_HC_DISABLE_INTERCEPT_WRMSR_ICR);
         pr_info("hypercall to disable intercept wrmsr icr\n");
 }
 
-static void hypercall_enable_intercept_wrmsr_icr(void)
+static void hc_enable_intercept_wrmsr_icr(void)
 {
         kvm_hypercall0(KVM_HC_ENABLE_INTERCEPT_WRMSR_ICR);
         pr_info("hypercall to enable intercept wrmsr icr\n");
@@ -794,6 +795,20 @@ static void hc_set_exception_bitmap(void)
         pr_info("hypercall to set the exception bitmap\n");
 }
 
+static void hc_test(void)
+{
+        unsigned int cpu;
+        unsigned long pid;
+        char *data;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        kvm_hypercall1(KVM_HC_TEST, virt_to_phys((void *)pid));
+        
+        data = (char *)pid;
+        pr_info("%c\n", data[0]);
+}
+
 static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
 {
         long ret = 0;
@@ -885,10 +900,13 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 hc_restore_x2apic_id();
                 break;
         case HC_DISABLE_INTERCEPT_WRMSR_ICR:
-                hypercall_disable_intercept_wrmsr_icr();
+                hc_disable_intercept_wrmsr_icr();
                 break;
         case HC_ENABLE_INTERCEPT_WRMSR_ICR:
-                hypercall_enable_intercept_wrmsr_icr();
+                hc_enable_intercept_wrmsr_icr();
+                break;
+        case HC_TEST:
+                hc_test();
                 break;
         case PAGE_WALK_INIT_MM: {
                 struct mm_struct *mm =

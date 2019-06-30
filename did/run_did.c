@@ -47,7 +47,8 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- hc_setup_dtid\n");
                 fprintf(stderr, "- hc_restore_dtid\n");
                 fprintf(stderr, "- hc_disable_intercept_wrmsr_icr\n");
-                fprintf(stderr, "- enable_intercept_wrmsr_icr\n");
+                fprintf(stderr, "- hc_enable_intercept_wrmsr_icr\n");
+                fprintf(stderr, "- hc_test\n");
                 return -1;
         }
         char *op = argv[1];
@@ -167,6 +168,9 @@ int main(int argc, char *argv[])
                         goto error;
         } else if (strcmp(op, "hc_enable_intercept_wrmsr_icr") == 0) {
                 if (ioctl(fd, HC_ENABLE_INTERCEPT_WRMSR_ICR) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_test") == 0) {
+                if (ioctl(fd, HC_TEST) < 0)
                         goto error;
         } else {
                 fprintf(stderr, "No such option: %s\n", op);

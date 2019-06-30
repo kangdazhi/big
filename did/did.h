@@ -32,6 +32,7 @@ typedef struct clockevent_device_t {
 #define KVM_HC_SET_EXCEPTION_BITMAP             309
 #define KVM_HC_GET_CLOCKEVENT_MULT         400
 #define KVM_HC_GET_CLOCKEVENT_SHIFT        401
+#define KVM_HC_TEST             500 
 
 /* ioctl to hypercall */
 #define HC_MAP_PID                      _IO('k', 1000)
@@ -51,6 +52,7 @@ typedef struct clockevent_device_t {
 #define HC_SET_PIN_BASED_EXEC_VMCS      _IO('k', 1014)
 #define HC_SET_SECONDARY_EXEC_VMCS      _IO('k', 1015)
 #define HC_SET_EXCEPTION_BITMAP         _IO('k', 1016)
+#define HC_TEST                         _IO('k', 1017)
 
 /* ioctl */
 #define SET_TIMER_EVENT_HANDLER         _IO('k', 2000)
