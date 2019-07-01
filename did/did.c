@@ -758,6 +758,64 @@ static bool hc_restore_dtid(void)
         return ret;
 }
 
+static int hc_setup_dtid_hugepage(void)
+{
+        int ret;
+        unsigned long pid;
+        unsigned int cpu;
+        int offset;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        offset = kvm_hypercall1(KVM_HC_SETUP_DTID_HUGEPAGE,
+                                virt_to_phys((void *)pid));
+
+        if (offset >= 0) {
+                ret = set_clockevent_factor();
+                set_timer_event_handler();
+
+                dids[cpu].start = (pid & ~0xFFF) | offset;
+                pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
+                apic_write(APIC_TMICT, 0x616d);
+
+                pr_info("cpu(%u): setting up dtid succeed: 0x%x\n", cpu, offset);
+        } else {
+                pr_alert("setting up dtid fails: %u\t%d\n", cpu, offset);
+                ret = -EAGAIN;
+        }
+
+        return ret;
+}
+
+static bool hc_restore_dtid_hugepage(void)
+{
+        bool ret;
+        unsigned int cpu;
+        unsigned long pid;
+        int res;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        res = kvm_hypercall1(KVM_HC_RESTORE_DTID_HUGEPAGE,
+                             virt_to_phys((void *)pid));
+
+        if (!res) {
+                restore_clockevent_factor();
+                restore_timer_event_handler();
+                apic_write(APIC_TMICT, 0x616d);
+
+                dids[cpu].start = 0;
+
+                pr_info("cpu(%u): restoring dtid succeed\n", cpu);
+                ret = true;
+        } else {
+                pr_alert("cpu(%u): restoring dtid fails: %d\n", cpu, res);
+                ret = false;
+        }
+
+        return ret;
+}
+
 /* vmcs */
 static void hc_set_cpu_exec_vmcs(void)
 {
@@ -891,6 +949,13 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 break;
         case HC_RESTORE_DTID:
                 if (!hc_restore_dtid())
+                        ret = -EAGAIN;
+                break;
+        case HC_SETUP_DTID_HUGEPAGE:
+                ret = hc_setup_dtid_hugepage();
+                break;
+        case HC_RESTORE_DTID_HUGEPAGE:
+                if (!hc_restore_dtid_hugepage())
                         ret = -EAGAIN;
                 break;
         case HC_SET_X2APIC_ID:
