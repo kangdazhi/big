@@ -24,6 +24,9 @@ struct osnet_pid_pte {
         unsigned long gfn_spte;         /* gfn spte vaddr */
         unsigned long long old_spte;    /* old spte: pfn | prot */
         kvm_pfn_t old_pfn;              /* old pfn */
+
+        /* Huge page */
+        pte_t saved_pid_pte;            /* saved PID PTE */
 };
 
 struct osnet_pi_desc {

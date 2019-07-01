@@ -6165,6 +6165,11 @@ static unsigned long osnet_get_gfn_spte(struct kvm_vcpu *vcpu)
         return osnet_get_pid_pte(vcpu)->gfn_spte;
 }
 
+static pte_t osnet_get_saved_pid_pte(struct kvm_vcpu *vcpu)
+{
+        return osnet_get_pid_pte(vcpu)->saved_pid_pte;
+}
+
 static void osnet_set_old_pfn(struct kvm_vcpu *vcpu, kvm_pfn_t old)
 {
         struct osnet_pid_pte *entry;
@@ -6193,6 +6198,13 @@ static void osnet_set_gfn_spte(struct kvm_vcpu *vcpu, unsigned long gfn_spte)
         entry->gfn_spte = gfn_spte;
 }
 
+static void osnet_set_saved_pid_pte(struct kvm_vcpu *vcpu, pte_t pte)
+{
+        struct osnet_pid_pte *entry;
+        entry = osnet_get_pid_pte(vcpu);
+        entry->saved_pid_pte = pte;
+}
+
 static struct vm_area_struct *osnet_find_vma(struct mm_struct *mm,
                                              unsigned long addr)
 {
@@ -6205,7 +6217,48 @@ static struct vm_area_struct *osnet_find_vma(struct mm_struct *mm,
         return vma;
 }
 
-static pte_t *osnet_page_walk(struct mm_struct *mm, unsigned long addr)
+static unsigned long osnet_page_walk(struct mm_struct *mm, unsigned long addr)
+{
+        pgd_t *pgd;
+        pud_t *pud;
+        pmd_t *pmd;
+        pte_t *pte;
+
+        pgd = pgd_offset(mm, addr);
+        if (pgd_none(*pgd)) {
+                pr_info("PGD does not exist\n");
+                goto out;
+        }
+        pr_info("PGD: 0x%p\t0x%lx\n", pgd, pgd_val(*pgd));
+
+        pud = pud_offset(pgd, addr);
+        if (pud_none(*pud)) {
+                pr_info("PUD does not exist\n");
+                goto out;
+        }
+        pr_info("PUD: 0x%p\t0x%lx\n", pud, pud_val(*pud));
+
+        pmd = pmd_offset(pud, addr);
+        if (pmd_none(*pmd)) {
+                pr_info("PMD does not exist\n");
+                goto out;
+        }
+        pr_info("PMD: 0x%p\t0x%lx\n", pmd, pmd_val(*pmd));
+
+        pte = pte_offset_map(pmd, addr);
+        if (pte_none(*pte)) {
+                pr_info("PTE does not exist\n");
+                goto out;
+        }
+        pr_info("PTE: 0x%p\t0x%lx\n", pte, pte_val(*pte));
+
+        return (unsigned long)pte;
+
+out:
+        return 0;
+}
+
+static pte_t *osnet_page_walk_alloc(struct mm_struct *mm, unsigned long addr)
 {
         pgd_t *pgd;
         pud_t *pud;
@@ -6348,7 +6401,7 @@ static int osnet_map_pid(struct kvm_vcpu *vcpu, unsigned long gpa)
         } else {
                 mm = vma->vm_mm;
         }
-        hva_pte = osnet_page_walk(mm, hva);
+        hva_pte = osnet_page_walk_alloc(mm, hva);
         osnet_set_hva_pte(vcpu, (unsigned long) hva_pte);
 
         pfn = gfn_to_pfn(vcpu->kvm, gfn);
@@ -6356,7 +6409,7 @@ static int osnet_map_pid(struct kvm_vcpu *vcpu, unsigned long gpa)
         pr_info("HVA: 0x%lx\t0x%llx\n", hva, pfn << PAGE_SHIFT);
 
         pid = osnet_get_pid(vcpu);
-        pr_info("TAR: 0x%lx\t0x%llx\n", pid, virt_to_phys((void *) pid));
+        pr_info("TAR: 0x%lx\t0x%llx\n", pid, virt_to_phys((void *)pid));
 
         prot = (pgprot_t) {OSNET_NEW_PID_PROTECTION};
         osnet_memory_map(mm, hva_pte, hva, pid, prot);
@@ -6380,28 +6433,33 @@ static void osnet_map_pid_spte(struct kvm_vcpu *vcpu)
         prot = old_spte & 0xFFF;
 
         pid = osnet_get_pid(vcpu);
-        pfn = virt_to_phys((void *) pid);
+        pfn = virt_to_phys((void *)pid);
         new_entry = pfn | prot;
 
         gfn_spte = osnet_get_gfn_spte(vcpu);
         *(u64 *)gfn_spte = new_entry;
 }
 
-static void osnet_flush_tlb_page(struct kvm_vcpu *vcpu, unsigned long gpa)
+static void osnet_flush_tlb(unsigned long vaddr)
 {
-        gfn_t gfn;
-        hva_t hva;
         struct vm_area_struct *vma;
         typedef void (*func_t)(struct vm_area_struct *vma,
                                unsigned long address);
         func_t my_flush_tlb_page;
 
+        vma = osnet_find_vma(current->mm, vaddr);
+        my_flush_tlb_page = (func_t) kallsyms_lookup_name("flush_tlb_page");
+        my_flush_tlb_page(vma, vaddr);
+}
+
+static void osnet_flush_vcpu_tlb(struct kvm_vcpu *vcpu, unsigned long gpa)
+{
+        gfn_t gfn;
+        hva_t hva;
+
         gfn = gpa_to_gfn(gpa);
         hva = gfn_to_hva(vcpu->kvm, gfn);
-        vma = osnet_find_vma(current->mm, hva);
-
-        my_flush_tlb_page = (func_t) kallsyms_lookup_name("flush_tlb_page");
-        my_flush_tlb_page(vma, hva);
+        osnet_flush_tlb(hva);
 }
 
 static int hypercall_map_pid(struct kvm_vcpu *vcpu, unsigned long gpa)
@@ -6423,6 +6481,108 @@ static int hypercall_map_pid(struct kvm_vcpu *vcpu, unsigned long gpa)
         }
 
         return offset;
+}
+
+static int osnet_map_pid_to_hugepage(struct kvm_vcpu *vcpu, unsigned long gpa)
+{
+        gfn_t gfn;
+        kvm_pfn_t pfn;
+        hva_t hva;
+        struct vm_area_struct *vma;
+        struct mm_struct *mm;
+        unsigned long pid;
+        pte_t *pid_pte;
+        pte_t new_pid_pte;
+        unsigned long prot;
+        struct page *page;
+        void *new_pid;
+        typedef void (*func_t)(void);
+        func_t my_flush_tlb_current_task;
+
+        gfn = gpa_to_gfn(gpa);
+        pfn = gfn_to_pfn(vcpu->kvm, gfn);
+        hva = gfn_to_hva(vcpu->kvm, gfn);
+        vma = osnet_find_vma(current->mm, hva);
+        if (!vma) {
+                pr_alert("VMA is not found\n");
+                return -EAGAIN;
+        } else {
+                mm = vma->vm_mm;
+        }
+        
+        pid = osnet_get_pid(vcpu);
+        page = pfn_to_page(pfn);
+        new_pid = kmap(page);
+        memcpy(new_pid, (void *)pid, PAGE_SIZE);
+        kvm_x86_ops->vmcs_write64(POSTED_INTR_DESC_ADDR, virt_to_phys(new_pid));
+
+        pid_pte = (pte_t *)osnet_page_walk(mm, pid);
+        osnet_set_saved_pid_pte(vcpu, *pid_pte);
+        prot = pte_val(*pid_pte) & 0xFFF;
+        new_pid_pte = (pte_t){virt_to_phys(new_pid) | prot};
+        *pid_pte = new_pid_pte;
+        //osnet_dec_page_ref(hva);
+
+        my_flush_tlb_current_task =
+                (func_t)kallsyms_lookup_name("flush_tlb_current_task");
+        my_flush_tlb_current_task();
+
+        pr_info("***** PID Update *****\n");
+        pr_info("OLD PID PTE    : 0x%lx\n",
+                pte_val(osnet_get_saved_pid_pte(vcpu)));
+        pr_info("NEW PID PTE    : 0x%lx\n", pte_val(new_pid_pte));
+        pr_info("UPDATED PID PTE: 0x%lx\n", pte_val(*pid_pte));
+
+        return 0;
+}
+
+static int osnet_unmap_pid_to_hugepage(struct kvm_vcpu *vcpu,
+                                       unsigned long gpa)
+{
+        gfn_t gfn;
+        kvm_pfn_t pfn;
+        hva_t hva;
+        struct vm_area_struct *vma;
+        struct mm_struct *mm;
+        unsigned long pid;
+        pte_t *pid_pte;
+        pte_t saved_pid_pte;
+        struct page *page;
+        void *gpid;
+        typedef void (*func_t)(void);
+        func_t my_flush_tlb_current_task;
+
+        gfn = gpa_to_gfn(gpa);
+        pfn = gfn_to_pfn(vcpu->kvm, gfn);
+        hva = gfn_to_hva(vcpu->kvm, gfn);
+        vma = osnet_find_vma(current->mm, hva);
+        if (!vma) {
+                pr_alert("VMA is not found\n");
+                return -EAGAIN;
+        } else {
+                mm = vma->vm_mm;
+        }
+
+        page = pfn_to_page(pfn);
+        gpid = kmap(page);
+        pid = osnet_get_pid(vcpu);
+        memcpy((void*)pid, gpid, PAGE_SIZE);
+        kvm_x86_ops->vmcs_write64(POSTED_INTR_DESC_ADDR,
+                                  virt_to_phys((void *)pid));
+
+        pid_pte = (pte_t *)osnet_page_walk(mm, pid);
+        saved_pid_pte = osnet_get_saved_pid_pte(vcpu);
+        *pid_pte = saved_pid_pte;
+        //osnet_dec_page_ref(hva);
+
+        my_flush_tlb_current_task =
+                (func_t)kallsyms_lookup_name("flush_tlb_current_task");
+        my_flush_tlb_current_task();
+
+        pr_info("***** PID Restore *****\n");
+        pr_info("RESTORED PID PTE: 0x%lx\n", pte_val(*pid_pte));
+
+        return 0;
 }
 
 static bool osnet_unmap_pid(struct kvm_vcpu *vcpu, unsigned long gpa)
@@ -6496,12 +6656,11 @@ static bool hypercall_page_walk(struct kvm_vcpu *vcpu, unsigned long gpa)
         kvm_pfn_t pfn;
         struct vm_area_struct *vma;
         struct mm_struct *mm;
-        //unsigned long pid;
-
-        pr_info("GPA: 0x%lx\n", gpa);
+        unsigned long pid;
 
         gfn = gpa_to_gfn(gpa);
         hva = gfn_to_hva(vcpu->kvm, gfn);
+        pfn = gfn_to_pfn(vcpu->kvm, gfn);
         vma = osnet_find_vma(current->mm, hva);
         if (!vma) {
                 pr_alert("VMA is not found\n");
@@ -6510,16 +6669,19 @@ static bool hypercall_page_walk(struct kvm_vcpu *vcpu, unsigned long gpa)
                 mm = vma->vm_mm;
         }
 
-        osnet_page_walk(mm, hva);
-        pfn = gfn_to_pfn(vcpu->kvm, gfn);
+        pr_info("***** GPA Walk *****\n");
+        pr_info("GPA: 0x%lx\n", gpa);
         pr_info("HVA: 0x%lx\t0x%llx\n", hva, pfn << PAGE_SHIFT);
+        osnet_page_walk(mm, hva);
 
+        pr_info("***** SPT Walk *****\n");
         if(!osnet_spt_walk(vcpu, gfn))
                 pr_info("pfn 0x%llx is not found in spte\n", pfn);
 
-        //pid = osnet_get_pid(vcpu);
-        //osnet_page_walk(current->mm, pid);
-        //pr_info("PID: 0x%lx\t0x%llx\n", pid, virt_to_phys((void *) pid));
+        pr_info("***** PID Walk *****\n");
+        pid = osnet_get_pid(vcpu);
+        pr_info("PID: 0x%lx\t0x%llx\n", pid, virt_to_phys((void *)pid));
+        osnet_page_walk(mm, pid);
 
         return true;
 }
@@ -6664,7 +6826,7 @@ static unsigned long osnet_setup_dtid(struct kvm_vcpu *vcpu, unsigned long gpa)
         unsigned long ret;
 
         ret = hypercall_map_pid(vcpu, gpa);
-        osnet_flush_tlb_page(vcpu, gpa);
+        osnet_flush_vcpu_tlb(vcpu, gpa);
         pr_info("vcpu(%d) maps pid(%d)\n", vcpu->vcpu_id, current->pid);
 
         osnet_set_cpu_exec_ctrl(vcpu, false);
@@ -6674,12 +6836,43 @@ static unsigned long osnet_setup_dtid(struct kvm_vcpu *vcpu, unsigned long gpa)
         return ret;
 }
 
-static unsigned long osnet_restore_dtid(struct kvm_vcpu *vcpu, unsigned long gpa)
+static unsigned long osnet_restore_dtid(struct kvm_vcpu *vcpu,
+                                        unsigned long gpa)
 {
         unsigned long ret;
 
         ret = hypercall_unmap_pid(vcpu, gpa);
-        osnet_flush_tlb_page(vcpu, gpa);
+        osnet_flush_vcpu_tlb(vcpu, gpa);
+        pr_info("vcpu(%d) unmaps pid(%d)\n", vcpu->vcpu_id, current->pid);
+
+        osnet_set_cpu_exec_ctrl(vcpu, true);
+        osnet_set_timer_msr_bitmap(vcpu, true);
+        osnet_set_lapic(true, true, 0x616d);
+
+        return ret;
+}
+
+static unsigned long osnet_setup_dtid_hugepage(struct kvm_vcpu *vcpu,
+                                               unsigned long gpa)
+{
+        unsigned long ret;
+
+        ret = osnet_map_pid_to_hugepage(vcpu, gpa);
+        pr_info("vcpu(%d) maps pid(%d)\n", vcpu->vcpu_id, current->pid);
+
+        osnet_set_cpu_exec_ctrl(vcpu, false);
+        osnet_set_timer_msr_bitmap(vcpu, false);
+        osnet_set_lapic(false, false, 0x616d);
+
+        return ret;
+}
+
+static unsigned long osnet_restore_dtid_hugepage(struct kvm_vcpu *vcpu,
+                                                 unsigned long gpa)
+{
+        unsigned long ret;
+
+        ret = osnet_unmap_pid_to_hugepage(vcpu, gpa);
         pr_info("vcpu(%d) unmaps pid(%d)\n", vcpu->vcpu_id, current->pid);
 
         osnet_set_cpu_exec_ctrl(vcpu, true);
@@ -6708,6 +6901,24 @@ static unsigned long osnet_get_clockevent_factor(const char *query)
                 ret = 0;
 
         return ret;
+}
+
+static void osnet_test(struct kvm_vcpu *vcpu, unsigned long arg)
+{
+        gfn_t gfn;
+        kvm_pfn_t pfn;
+        struct page *page;
+        char *data;
+
+        gfn = gpa_to_gfn(arg);
+        pfn = gfn_to_pfn(vcpu->kvm, gfn);
+        page = pfn_to_page(pfn);
+        data = (char *)kmap(page);
+        data[0] = 'k';
+
+        pr_info("gpa: 0x%lx\n", arg);
+        pr_info("pfn: 0x%llx\n", pfn);
+        pr_info("paddr: 0x%llx\n", virt_to_phys((void *)data));
 }
 #endif
 
@@ -6803,16 +7014,26 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
         case KVM_HC_RESTORE_DTID:
                 ret = osnet_restore_dtid(vcpu, a0);
                 break;
+        case KVM_HC_SETUP_DTID_HUGEPAGE:
+                ret = osnet_setup_dtid_hugepage(vcpu, a0);
+                break;
+        case KVM_HC_RESTORE_DTID_HUGEPAGE:
+                ret = osnet_restore_dtid_hugepage(vcpu, a0);
+                break;
+        case KVM_HC_TEST:
+                osnet_test(vcpu, a0);
+                ret = 0;
+                break;
 #endif
 #if OSNET_DTID_HYPERCALL_MAP_PID
         case KVM_HC_MAP_PID:
                 ret = hypercall_map_pid(vcpu, a0);
-                osnet_flush_tlb_page(vcpu, a0);
+                osnet_flush_vcpu_tlb(vcpu, a0);
                 pr_info("vcpu(%d) maps pid(%d)\n", vcpu->vcpu_id, current->pid);
                 break;
         case KVM_HC_UNMAP_PID:
                 ret = hypercall_unmap_pid(vcpu, a0);
-                osnet_flush_tlb_page(vcpu, a0);
+                osnet_flush_vcpu_tlb(vcpu, a0);
                 pr_info("vcpu(%d) unmaps pid(%d)\n", vcpu->vcpu_id,
                                                      current->pid);
                 break;
