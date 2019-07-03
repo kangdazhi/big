@@ -63,8 +63,6 @@ enable_dtid_hugepage()
         local cpus=$((ncpus - 1))
 
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_setup_dtid_hugepage; done
-        cat /proc/interrupts
-        for i in `seq 0 $cpus`; do wrmsr -p $i 0x838 0x616d; done
         for i in `seq 0 $cpus`; do wrmsr -p $i 0x838 0x616d; done
 }
 
@@ -74,7 +72,6 @@ disable_dtid_hugepage()
         local cpus=$((ncpus - 1))
 
         for i in `seq 0 $cpus`; do taskset -c $i ./run_did hc_restore_dtid_hugepage; done
-        for i in `seq 0 $cpus`; do wrmsr -p $i 0x838 0x616d; done
         for i in `seq 0 $cpus`; do wrmsr -p $i 0x838 0x616d; done
 }
 
