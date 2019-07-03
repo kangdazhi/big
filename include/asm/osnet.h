@@ -26,7 +26,8 @@ struct osnet_pid_pte {
         kvm_pfn_t old_pfn;              /* old pfn */
 
         /* Huge page */
-        pte_t saved_pid_pte;            /* saved PID PTE */
+        unsigned long gpid;             /* vaddr to subpage of guest hugepage */
+        //pte_t saved_pid_pte;            /* saved PID PTE */
 };
 
 struct osnet_pi_desc {

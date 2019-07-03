@@ -1048,6 +1048,7 @@ struct kvm_x86_ops {
         void (*vmcs_write32)(unsigned long field, u32 value);
         void (*vmcs_write64)(unsigned long field, u64 value);
         void (*dump_vmcs)(void);
+        void (*update_pid)(struct kvm_vcpu *vcpu, unsigned long pid);
 #endif
 
 #if OSNET_CONFIGURE_MSR_BITMAP

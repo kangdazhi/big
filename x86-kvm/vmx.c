@@ -11573,6 +11573,12 @@ static u32 osnet_get_vmx_secondary_exec_ctrl(struct kvm_vcpu *vcpu)
         struct vcpu_vmx *vmx = to_vmx(vcpu);
         return vmx_secondary_exec_control(vmx);
 }
+
+static void osnet_update_pid(struct kvm_vcpu *vcpu, unsigned long pid)
+{
+        struct vcpu_vmx *vmx = to_vmx(vcpu);
+        vmx->pi_desc = (struct pi_desc*) pid;
+}
 #endif
 
 #if OSNET_CONFIGURE_MSR_BITMAP
@@ -11760,6 +11766,7 @@ static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
         .vmcs_write32 = vmcs_write32,
         .vmcs_write64 = vmcs_write64,
         .dump_vmcs = dump_vmcs,
+        .update_pid = osnet_update_pid,
 #endif
 
 #if OSNET_CONFIGURE_MSR_BITMAP
