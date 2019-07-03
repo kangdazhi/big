@@ -311,6 +311,57 @@ static bool hc_unmap_posted_interrupt_descriptor(void)
         return ret;
 }
 
+static bool hc_map_pid_to_hugepage(void)
+{
+        bool ret;
+        unsigned int cpu;
+        unsigned long pid;
+        int offset;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        offset = kvm_hypercall1(KVM_HC_MAP_PID_TO_HUGEPAGE,
+                                virt_to_phys((void *)pid));
+
+        if (offset >= 0) {
+                dids[cpu].start = (pid & ~0xFFF) | offset;
+                pr_info("cpu(%u): mapping pid to hugepage succeed: 0x%x\n",
+                        cpu, offset);
+                ret = true;
+
+        } else {
+                pr_alert("maping pid fails: %u\t%d\n", cpu, offset);
+                ret = false;
+        }
+
+        return ret;
+}
+
+static bool hc_unmap_pid_to_hugepage(void)
+{
+        bool ret;
+        unsigned int cpu;
+        unsigned long pid;
+        int res;
+
+        cpu = smp_processor_id();
+        pid = dids[cpu].pid;
+        res = kvm_hypercall1(KVM_HC_UNMAP_PID_TO_HUGEPAGE,
+                             virt_to_phys((void *)pid));
+
+        if (!res) {
+                dids[cpu].start = 0;
+                pr_info("cpu(%u): unmapping pid succeed to hugepage\n", cpu);
+                ret = true;
+        } else {
+                pr_alert("cpu(%u): unmapping pid fails: %d\n", cpu, res);
+                ret = false;
+        }
+
+        return ret;
+}
+
+
 static bool hc_page_walk(void)
 {
         bool ret;
@@ -972,6 +1023,14 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 break;
         case HC_TEST:
                 hc_test();
+                break;
+        case HC_MAP_PID_TO_HUGEPAGE:
+                if (!hc_map_pid_to_hugepage())
+                        ret = -EAGAIN;
+                break;
+        case HC_UNMAP_PID_TO_HUGEPAGE:
+                if (!hc_unmap_pid_to_hugepage())
+                        ret = -EAGAIN;
                 break;
         case PAGE_WALK_INIT_MM: {
                 struct mm_struct *mm =

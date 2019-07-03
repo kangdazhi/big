@@ -41,6 +41,8 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- hc_get_clockevent_shift\n");
                 fprintf(stderr, "- hc_map_pid\n");
                 fprintf(stderr, "- hc_unmap_pid\n");
+                fprintf(stderr, "- hc_map_pid_to_hugepage\n");
+                fprintf(stderr, "- hc_unmap_pid_to_hugepage\n");
                 fprintf(stderr, "- hc_page_walk\n");
                 fprintf(stderr, "- hc_set_x2apic_id\n");
                 fprintf(stderr, "- hc_restore_x2apic_id\n");
@@ -146,6 +148,12 @@ int main(int argc, char *argv[])
                         goto error;
         } else if (strcmp(op, "hc_unmap_pid") == 0) {
                 if (ioctl(fd, HC_UNMAP_PID) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_map_pid_to_hugepage") == 0) {
+                if (ioctl(fd, HC_MAP_PID_TO_HUGEPAGE) < 0)
+                        goto error;
+        } else if (strcmp(op, "hc_unmap_pid_to_hugepage") == 0) {
+                if (ioctl(fd, HC_UNMAP_PID_TO_HUGEPAGE) < 0)
                         goto error;
         } else if (strcmp(op, "hc_page_walk") == 0) {
                 if (ioctl(fd, HC_PAGE_WALK) < 0)
