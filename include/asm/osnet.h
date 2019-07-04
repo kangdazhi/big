@@ -19,15 +19,11 @@
 #define OSNET_NEW_PID_PROTECTION 0x167
 
 struct osnet_pid_pte {
-        unsigned long pid;              /* pid vaddr */
-        unsigned long hva_pte;          /* HVA PTE vaddr */
-        unsigned long gfn_spte;         /* gfn spte vaddr */
-        unsigned long long old_spte;    /* old spte: pfn | prot */
-        kvm_pfn_t old_pfn;              /* old pfn */
+        /* vaddr of host's pid */
+        unsigned long pid;
 
-        /* Huge page */
-        unsigned long gpid;             /* vaddr to subpage of guest hugepage */
-        //pte_t saved_pid_pte;            /* saved PID PTE */
+        /* vaddr of the shared/guest PID */
+        unsigned long gpid;
 };
 
 struct osnet_pi_desc {
