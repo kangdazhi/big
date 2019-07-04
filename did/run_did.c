@@ -41,15 +41,11 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "- hc_get_clockevent_shift\n");
                 fprintf(stderr, "- hc_map_pid\n");
                 fprintf(stderr, "- hc_unmap_pid\n");
-                fprintf(stderr, "- hc_map_pid_to_hugepage\n");
-                fprintf(stderr, "- hc_unmap_pid_to_hugepage\n");
                 fprintf(stderr, "- hc_page_walk\n");
                 fprintf(stderr, "- hc_set_x2apic_id\n");
                 fprintf(stderr, "- hc_restore_x2apic_id\n");
                 fprintf(stderr, "- hc_setup_dtid\n");
                 fprintf(stderr, "- hc_restore_dtid\n");
-                fprintf(stderr, "- hc_setup_dtid_hugepage\n");
-                fprintf(stderr, "- hc_restore_dtid_hugepage\n");
                 fprintf(stderr, "- hc_disable_intercept_wrmsr_icr\n");
                 fprintf(stderr, "- hc_enable_intercept_wrmsr_icr\n");
                 fprintf(stderr, "- hc_test\n");
@@ -149,12 +145,6 @@ int main(int argc, char *argv[])
         } else if (strcmp(op, "hc_unmap_pid") == 0) {
                 if (ioctl(fd, HC_UNMAP_PID) < 0)
                         goto error;
-        } else if (strcmp(op, "hc_map_pid_to_hugepage") == 0) {
-                if (ioctl(fd, HC_MAP_PID_TO_HUGEPAGE) < 0)
-                        goto error;
-        } else if (strcmp(op, "hc_unmap_pid_to_hugepage") == 0) {
-                if (ioctl(fd, HC_UNMAP_PID_TO_HUGEPAGE) < 0)
-                        goto error;
         } else if (strcmp(op, "hc_page_walk") == 0) {
                 if (ioctl(fd, HC_PAGE_WALK) < 0)
                         goto error;
@@ -165,18 +155,10 @@ int main(int argc, char *argv[])
                 if (ioctl(fd, HC_RESTORE_X2APIC_ID) < 0)
                         goto error;
         } else if (strcmp(op, "hc_setup_dtid") == 0) {
-                //clockevent_device_t data =
-                //        (clockevent_device_t){"lapic", args[0], args[1]};
                 if (ioctl(fd, HC_SETUP_DTID) < 0)
                         goto error;
         } else if (strcmp(op, "hc_restore_dtid") == 0) {
                 if (ioctl(fd, HC_RESTORE_DTID) < 0)
-                        goto error;
-        } else if (strcmp(op, "hc_setup_dtid_hugepage") == 0) {
-                if (ioctl(fd, HC_SETUP_DTID_HUGEPAGE) < 0)
-                        goto error;
-        } else if (strcmp(op, "hc_restore_dtid_hugepage") == 0) {
-                if (ioctl(fd, HC_RESTORE_DTID_HUGEPAGE) < 0)
                         goto error;
         } else if (strcmp(op, "hc_disable_intercept_wrmsr_icr") == 0) {
                 if (ioctl(fd, HC_DISABLE_INTERCEPT_WRMSR_ICR) < 0)

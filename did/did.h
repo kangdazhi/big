@@ -17,13 +17,8 @@ typedef struct clockevent_device_t {
 /* hypercall */
 #define KVM_HC_SETUP_DTID                       100
 #define KVM_HC_RESTORE_DTID                     101
-#define KVM_HC_SETUP_DTID_HUGEPAGE              102
-#define KVM_HC_RESTORE_DTID_HUGEPAGE            103
 #define KVM_HC_MAP_PID                          200
 #define KVM_HC_UNMAP_PID                        201
-#define KVM_HC_PAGE_WALK                        202
-#define KVM_HC_MAP_PID_TO_HUGEPAGE              203
-#define KVM_HC_UNMAP_PID_TO_HUGEPAGE            204
 #define KVM_HC_SET_X2APIC_ID                    300
 #define KVM_HC_RESTORE_X2APIC_ID                301
 #define KVM_HC_DISABLE_INTERCEPT_WRMSR_ICR      302
@@ -37,13 +32,13 @@ typedef struct clockevent_device_t {
 #define KVM_HC_GET_CLOCKEVENT_MULT              400
 #define KVM_HC_GET_CLOCKEVENT_SHIFT             401
 #define KVM_HC_TEST                             500
+#define KVM_HC_PAGE_WALK                        501
 
 /* ioctl to hypercall */
-#define HC_MAP_PID                      _IO('k', 1000)
-#define HC_UNMAP_PID                    _IO('k', 1001)
-#define HC_PAGE_WALK                    _IO('k', 1002)
-#define HC_SETUP_DTID                   _IO('k', 1003)
-#define HC_RESTORE_DTID                 _IO('k', 1004)
+#define HC_SETUP_DTID                   _IO('k', 1001)
+#define HC_RESTORE_DTID                 _IO('k', 1002)
+#define HC_MAP_PID                      _IO('k', 1003)
+#define HC_UNMAP_PID                    _IO('k', 1004)
 #define HC_SET_X2APIC_ID                _IO('k', 1005)
 #define HC_RESTORE_X2APIC_ID            _IO('k', 1006)
 #define HC_DISABLE_INTERCEPT_WRMSR_ICR  _IO('k', 1007)
@@ -57,17 +52,14 @@ typedef struct clockevent_device_t {
 #define HC_SET_SECONDARY_EXEC_VMCS      _IO('k', 1015)
 #define HC_SET_EXCEPTION_BITMAP         _IO('k', 1016)
 #define HC_TEST                         _IO('k', 1017)
-#define HC_SETUP_DTID_HUGEPAGE          _IO('k', 1018)
-#define HC_RESTORE_DTID_HUGEPAGE        _IO('k', 1019)
-#define HC_MAP_PID_TO_HUGEPAGE          _IO('k', 1020)
-#define HC_UNMAP_PID_TO_HUGEPAGE        _IO('k', 1021)
+#define HC_PAGE_WALK                    _IO('k', 1018)
 
 /* ioctl */
 #define SET_TIMER_EVENT_HANDLER         _IO('k', 2000)
 #define RESTORE_TIMER_EVENT_HANDLER     _IO('k', 2001)
-#define PRINT_DID                       _IO('k', 2002)
-#define SET_CLOCKEVENT_FACTOR           _IO('k', 2003)
-#define RESTORE_CLOCKEVENT_FACTOR       _IO('k', 2004)
+#define SET_CLOCKEVENT_FACTOR           _IO('k', 2002)
+#define RESTORE_CLOCKEVENT_FACTOR       _IO('k', 2003)
+#define PRINT_DID                       _IO('k', 2004)
 
 /* ipi */
 typedef struct ipi_t {

@@ -264,7 +264,7 @@ static void restore_timer_event_handler(void)
         evt->event_handler = dids[cpu].event_handler;
 }
 
-static bool hc_map_posted_interrupt_descriptor(void)
+static bool hc_map_pid(void)
 {
         bool ret;
         unsigned int cpu;
@@ -277,55 +277,7 @@ static bool hc_map_posted_interrupt_descriptor(void)
 
         if (offset >= 0) {
                 dids[cpu].start = (pid & ~0xFFF) | offset;
-                pr_info("cpu(%u): mapping pid succeed: 0x%x\n", cpu, offset);
-                ret = true;
-
-        } else {
-                pr_alert("maping pid fails: %u\t%d\n", cpu, offset);
-                ret = false;
-        }
-
-        return ret;
-}
-
-static bool hc_unmap_posted_interrupt_descriptor(void)
-{
-        bool ret;
-        unsigned int cpu;
-        unsigned long pid;
-        int res;
-
-        cpu = smp_processor_id();
-        pid = dids[cpu].pid;
-        res = kvm_hypercall1(KVM_HC_UNMAP_PID, virt_to_phys((void *)pid));
-
-        if (res) {
-                dids[cpu].start = 0;
-                pr_info("cpu(%u): unmapping pid succeed\n", cpu);
-                ret = true;
-        } else {
-                pr_alert("cpu(%u): unmapping pid fails: %d\n", cpu, res);
-                ret = false;
-        }
-
-        return ret;
-}
-
-static bool hc_map_pid_to_hugepage(void)
-{
-        bool ret;
-        unsigned int cpu;
-        unsigned long pid;
-        int offset;
-
-        cpu = smp_processor_id();
-        pid = dids[cpu].pid;
-        offset = kvm_hypercall1(KVM_HC_MAP_PID_TO_HUGEPAGE,
-                                virt_to_phys((void *)pid));
-
-        if (offset >= 0) {
-                dids[cpu].start = (pid & ~0xFFF) | offset;
-                pr_info("cpu(%u): mapping pid to hugepage succeed: 0x%x\n",
+                pr_info("cpu(%u): mapping pid succeed: 0x%x\n",
                         cpu, offset);
                 ret = true;
 
@@ -337,7 +289,7 @@ static bool hc_map_pid_to_hugepage(void)
         return ret;
 }
 
-static bool hc_unmap_pid_to_hugepage(void)
+static bool hc_unmap_pid(void)
 {
         bool ret;
         unsigned int cpu;
@@ -346,12 +298,11 @@ static bool hc_unmap_pid_to_hugepage(void)
 
         cpu = smp_processor_id();
         pid = dids[cpu].pid;
-        res = kvm_hypercall1(KVM_HC_UNMAP_PID_TO_HUGEPAGE,
-                             virt_to_phys((void *)pid));
+        res = kvm_hypercall1(KVM_HC_UNMAP_PID, virt_to_phys((void *)pid));
 
         if (!res) {
                 dids[cpu].start = 0;
-                pr_info("cpu(%u): unmapping pid succeed to hugepage\n", cpu);
+                pr_info("cpu(%u): unmapping pid succeed\n", cpu);
                 ret = true;
         } else {
                 pr_alert("cpu(%u): unmapping pid fails: %d\n", cpu, res);
@@ -792,64 +743,6 @@ static bool hc_restore_dtid(void)
         pid = dids[cpu].pid;
         res = kvm_hypercall1(KVM_HC_RESTORE_DTID, virt_to_phys((void *)pid));
 
-        if (res) {
-                restore_clockevent_factor();
-                restore_timer_event_handler();
-                apic_write(APIC_TMICT, 0x616d);
-
-                dids[cpu].start = 0;
-
-                pr_info("cpu(%u): restoring dtid succeed\n", cpu);
-                ret = true;
-        } else {
-                pr_alert("cpu(%u): restoring dtid fails: %d\n", cpu, res);
-                ret = false;
-        }
-
-        return ret;
-}
-
-static int hc_setup_dtid_hugepage(void)
-{
-        int ret;
-        unsigned long pid;
-        unsigned int cpu;
-        int offset;
-
-        cpu = smp_processor_id();
-        pid = dids[cpu].pid;
-        offset = kvm_hypercall1(KVM_HC_SETUP_DTID_HUGEPAGE,
-                                virt_to_phys((void *)pid));
-
-        if (offset >= 0) {
-                ret = set_clockevent_factor();
-                set_timer_event_handler();
-
-                dids[cpu].start = (pid & ~0xFFF) | offset;
-                pi_set_timer_interrupt((unsigned long *)dids[cpu].start);
-                apic_write(APIC_TMICT, 0x616d);
-
-                pr_info("cpu(%u): setting up dtid succeed: 0x%x\n", cpu, offset);
-        } else {
-                pr_alert("setting up dtid fails: %u\t%d\n", cpu, offset);
-                ret = -EAGAIN;
-        }
-
-        return ret;
-}
-
-static bool hc_restore_dtid_hugepage(void)
-{
-        bool ret;
-        unsigned int cpu;
-        unsigned long pid;
-        int res;
-
-        cpu = smp_processor_id();
-        pid = dids[cpu].pid;
-        res = kvm_hypercall1(KVM_HC_RESTORE_DTID_HUGEPAGE,
-                             virt_to_phys((void *)pid));
-
         if (!res) {
                 restore_clockevent_factor();
                 restore_timer_event_handler();
@@ -913,7 +806,7 @@ static void hc_test(void)
         cpu = smp_processor_id();
         pid = dids[cpu].pid;
         kvm_hypercall1(KVM_HC_TEST, virt_to_phys((void *)pid));
-        
+
         data = (char *)pid;
         pr_info("%c\n", data[0]);
 }
@@ -983,14 +876,6 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case HC_GET_CLOCKEVENT_SHIFT:
                 hc_get_clockevent_factor("shift");
                 break;
-        case HC_MAP_PID:
-                if (!hc_map_posted_interrupt_descriptor())
-                        ret = -EAGAIN;
-                break;
-        case HC_UNMAP_PID:
-                if (!hc_unmap_posted_interrupt_descriptor())
-                        ret = -EAGAIN;
-                break;
         case HC_PAGE_WALK:
                 if (!hc_page_walk())
                         ret = -EAGAIN;
@@ -1000,13 +885,6 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
                 break;
         case HC_RESTORE_DTID:
                 if (!hc_restore_dtid())
-                        ret = -EAGAIN;
-                break;
-        case HC_SETUP_DTID_HUGEPAGE:
-                ret = hc_setup_dtid_hugepage();
-                break;
-        case HC_RESTORE_DTID_HUGEPAGE:
-                if (!hc_restore_dtid_hugepage())
                         ret = -EAGAIN;
                 break;
         case HC_SET_X2APIC_ID:
@@ -1024,12 +902,12 @@ static long my_ioctl(struct file *fobj, unsigned int cmd, unsigned long arg)
         case HC_TEST:
                 hc_test();
                 break;
-        case HC_MAP_PID_TO_HUGEPAGE:
-                if (!hc_map_pid_to_hugepage())
+        case HC_MAP_PID:
+                if (!hc_map_pid())
                         ret = -EAGAIN;
                 break;
-        case HC_UNMAP_PID_TO_HUGEPAGE:
-                if (!hc_unmap_pid_to_hugepage())
+        case HC_UNMAP_PID:
+                if (!hc_unmap_pid())
                         ret = -EAGAIN;
                 break;
         case PAGE_WALK_INIT_MM: {
