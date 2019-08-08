@@ -51,7 +51,7 @@ Pre-Requisite
 Install DID-KVM in the Host
 ---------------------------
 - Assume we are in the host branch of Big repository (big/),
-  which has the following directory.
+  which has the following files.
   - include/
   - Makefile
   - osnet/
@@ -73,7 +73,7 @@ Install DID-KVM in the Host
 Install the DID Device in the Guest
 -----------------------------------
 - Assume we are in the guest branch of Big repository (big/),
-  which has the following directory.
+  which has the following files.
   - bonding-driver/
   - did/
   - Makefile
