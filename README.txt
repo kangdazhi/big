@@ -64,11 +64,11 @@ Install DID-KVM in the Host
   - x86-kvm/mmutrace.h
     #define TRACE_INCLUDE_PATH /path/to/big/x86-kvm
 - Make the modules.
-  - # make
+  # make
 - Remove the existing KVM modules.
-  - # make remove
+  # make remove
 - Insert the DID-KVM modules.
-  - # make insert
+  # make insert
 
 Install the DID Device in the Guest
 -----------------------------------
@@ -79,24 +79,24 @@ Install the DID Device in the Guest
   - Makefile
   - README.txt
 - Make the modules.
-  - # make
+  # make
 - Insert the DID device.
-  - # make insert
-  - # ls /dev/did
+  # make insert
+  # ls /dev/did
 
 Dedicate PCPU to VCPU
 ---------------------
 - Isolate the PCPUs by isolcpus.
 - Boot up the QEMU/KVM guest.
 - Pin each VCPU thread to its PCPU, one VCPU per PCPU.
-  - # taskset -cp $pcpu $vcpu
+  # taskset -cp $pcpu $vcpu
 
 Enable Direct Timer Interrupt and IPI in the Guest
 --------------------------------------------------
 - Install the DID device in the guest.
 - Enable direct timer and inter-processor interrupts.
-  - # cd big/did
-  - # ./did.sh enable_did
+  # cd big/did
+  # ./did.sh enable_did
 
 Direct PCI-Device Assignment
 ----------------------------
