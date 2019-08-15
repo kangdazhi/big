@@ -19,6 +19,12 @@ Source Code
 - PATH: pci-passthrough/code/big.tar.gz
 - Big itself is a git repository, but not a submodule of
   pci-passthrough repository.
+  - List all the branches.
+    # git branch
+  - For the host, please use the host branch.
+    # git checkout host
+  - For the guest, please use the guest branch.
+    # git checkout guest
 
 Pre-Requisite
 -------------
